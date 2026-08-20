@@ -163,6 +163,7 @@ Set these environment variables before starting Pi:
 | `PI_SUB_MAX_AGENTS` | `12` | Maximum retained non-terminal agents admitted at once. |
 | `PI_SUB_MAX_CONCURRENCY` | `12` | Maximum child processes running at once. |
 | `PI_SUB_MAX_DEPTH` | `3` | Maximum delegation depth. Values above `3` are capped. |
+| `PI_SUB_MAX_RETAINED` | `100` | Maximum retained terminal (completed, failed, or cancelled) records. The oldest eligible terminal records are pruned first. Live records are never pruned, and a terminal record is kept while it still has a live descendant. |
 | `PI_SUB_CANCEL_GRACE_MS` | `5000` | Milliseconds between `SIGTERM` and `SIGKILL`. |
 | `PI_SUB_SOCKET_DIR` | Operating system temporary directory | Parent directory for private control sockets. |
 

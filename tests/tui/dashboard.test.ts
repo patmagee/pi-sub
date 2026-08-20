@@ -74,6 +74,36 @@ describe("dashboard hierarchy", () => {
     for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(120);
   });
 
+  it("removes pruned agents from the list without moving a surviving selection", () => {
+    let listener: ((records: AgentRecord[]) => void) | undefined;
+    const actions = callbacks();
+    const dashboard = new SubagentDashboard(
+      [
+        record({ id: "alpha", displayName: "alpha", status: "completed" }),
+        record({ id: "beta", displayName: "beta" }),
+        record({ id: "gamma", displayName: "gamma", status: "completed" }),
+      ],
+      theme,
+      {
+        ...actions,
+        subscribe: (next) => {
+          listener = next;
+          return vi.fn();
+        },
+      },
+    );
+    dashboard.handleInput("\u001b[B");
+    expect(dashboard.selectedId).toBe("beta");
+
+    listener?.([record({ id: "beta", displayName: "beta" })]);
+
+    expect(dashboard.selectedId).toBe("beta");
+    const text = dashboard.render(120).map(stripTerminalSequences).join("\n");
+    expect(text).toContain("beta [running]");
+    expect(text).not.toContain("alpha");
+    expect(text).not.toContain("gamma");
+  });
+
   it("keeps list selection stable and requests a rerender when subscribed records change", () => {
     let listener: ((records: AgentRecord[]) => void) | undefined;
     const actions = callbacks();

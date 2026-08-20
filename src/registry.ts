@@ -166,6 +166,40 @@ export class AgentRegistry {
     return [...this.records.values()].map(copyRecord);
   }
 
+  pruneTerminalRecords(): string[] {
+    const terminalRecords = [...this.records.values()].filter((record) =>
+      TERMINAL_STATUSES.has(record.status),
+    );
+    const overage = terminalRecords.length - this.config.maxRetained;
+    if (overage <= 0) return [];
+
+    const protectedIds = this.ancestorIdsOfLive();
+    const eligible = terminalRecords
+      .filter((record) => !protectedIds.has(record.id))
+      .sort((left, right) => (left.finishedAt ?? 0) - (right.finishedAt ?? 0));
+
+    const pruned: string[] = [];
+    for (const record of eligible) {
+      if (pruned.length >= overage) break;
+      this.records.delete(record.id);
+      pruned.push(record.id);
+    }
+    return pruned;
+  }
+
+  private ancestorIdsOfLive(): Set<string> {
+    const protectedIds = new Set<string>();
+    for (const record of this.records.values()) {
+      if (!LIVE_STATUSES.has(record.status)) continue;
+      let parentId = record.parentId;
+      while (parentId && !protectedIds.has(parentId)) {
+        protectedIds.add(parentId);
+        parentId = this.records.get(parentId)?.parentId;
+      }
+    }
+    return protectedIds;
+  }
+
   descendantsOf(id: string): AgentRecord[] {
     if (!this.records.has(id)) return [];
 

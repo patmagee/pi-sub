@@ -4,6 +4,7 @@ const DEFAULT_MAX_AGENTS = 12;
 const DEFAULT_MAX_CONCURRENCY = 12;
 const DEFAULT_MAX_DEPTH = 3;
 const DEFAULT_CANCEL_GRACE_MS = 5000;
+const DEFAULT_MAX_RETAINED = 100;
 const HARD_MAX_DEPTH = 3;
 
 interface IntegerSetting {
@@ -53,6 +54,11 @@ export function parseConfig(
     { name: "PI_SUB_CANCEL_GRACE_MS", fallback: DEFAULT_CANCEL_GRACE_MS },
     diagnostics,
   );
+  const maxRetained = parsePositiveInteger(
+    env,
+    { name: "PI_SUB_MAX_RETAINED", fallback: DEFAULT_MAX_RETAINED },
+    diagnostics,
+  );
 
   if (maxConcurrency > maxAgents) {
     maxConcurrency = maxAgents;
@@ -70,6 +76,7 @@ export function parseConfig(
     maxAgents,
     maxConcurrency,
     maxDepth,
+    maxRetained,
     cancelGraceMs,
   };
   if (env.PI_SUB_SOCKET_DIR) config.socketDir = env.PI_SUB_SOCKET_DIR;

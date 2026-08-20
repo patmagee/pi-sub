@@ -323,6 +323,7 @@ export class SubagentManager {
     if (record.status === "queued") record = this.registry.transition(id, "starting");
     record = this.registry.transition(id, "failed", error);
     this.pending.delete(id);
+    this.registry.pruneTerminalRecords();
     this.notify();
     return {
       id: record.id,
@@ -407,6 +408,7 @@ export class SubagentManager {
 
     this.options.controlServer?.revokeCredential?.(id);
     this.deliverTerminal(record);
+    this.registry.pruneTerminalRecords();
     this.notify();
     if (!this.shuttingDown) await this.scheduleNext();
   }
@@ -485,6 +487,7 @@ export class SubagentManager {
     } else {
       this.registry.transition(id, "cancelled", reason);
       this.deliverTerminal(this.registry.get(id)!);
+      this.registry.pruneTerminalRecords();
       this.notify();
     }
     if (!this.shuttingDown) void this.scheduleNext();

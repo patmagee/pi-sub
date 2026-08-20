@@ -8,10 +8,21 @@ describe("parseConfig", () => {
         maxAgents: 12,
         maxConcurrency: 12,
         maxDepth: 3,
+        maxRetained: 100,
         cancelGraceMs: 5000,
       },
       diagnostics: [],
     });
+  });
+
+  it("parses the retained-record limit with a positive-integer fallback", () => {
+    expect(parseConfig({}).config.maxRetained).toBe(100);
+    expect(parseConfig({ PI_SUB_MAX_RETAINED: "5" }).config.maxRetained).toBe(5);
+    const invalid = parseConfig({ PI_SUB_MAX_RETAINED: "0" });
+    expect(invalid.config.maxRetained).toBe(100);
+    expect(invalid.diagnostics).toContain(
+      "PI_SUB_MAX_RETAINED must be a positive base-ten integer; using 100.",
+    );
   });
 
   it("rejects malformed and non-positive integers with visible effective values", () => {

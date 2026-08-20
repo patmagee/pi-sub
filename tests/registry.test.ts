@@ -7,6 +7,7 @@ function config(overrides: Partial<SubagentConfig> = {}): SubagentConfig {
     maxAgents: 12,
     maxConcurrency: 12,
     maxDepth: 3,
+    maxRetained: 100,
     cancelGraceMs: 5000,
     ...overrides,
   };
@@ -74,6 +75,51 @@ describe("AgentRegistry admission", () => {
 
     expect(second.displayName).toBe("worker-2");
     expect(registry.liveCount).toBe(1);
+  });
+});
+
+describe("AgentRegistry retention", () => {
+  function complete(registry: AgentRegistry, name: string, parentId?: string) {
+    const admitted = registry.admit(request({ name, ...(parentId ? { parentId } : {}) }));
+    registry.transition(admitted.id, "running");
+    registry.transition(admitted.id, "completed");
+    return admitted;
+  }
+
+  it("prunes the oldest eligible terminal records while keeping live records and protected ancestors", () => {
+    const registry = new AgentRegistry(config({ maxRetained: 2 }));
+    const ancestor = registry.admit(request({ name: "ancestor" }));
+    const liveChild = registry.admit(request({ name: "live-child", parentId: ancestor.id }));
+    registry.transition(ancestor.id, "running");
+    registry.transition(ancestor.id, "completed");
+    const older = complete(registry, "older");
+    const newer = complete(registry, "newer");
+
+    const pruned = registry.pruneTerminalRecords();
+
+    expect(pruned).toEqual([older.id]);
+    expect(registry.get(older.id)).toBeUndefined();
+    expect(registry.get(ancestor.id)).toBeTruthy();
+    expect(registry.get(liveChild.id)).toBeTruthy();
+    expect(registry.get(newer.id)).toBeTruthy();
+  });
+
+  it("keeps a terminal ancestor until its descendants also become terminal", () => {
+    const registry = new AgentRegistry(config({ maxRetained: 1 }));
+    const ancestor = registry.admit(request({ name: "ancestor" }));
+    const child = registry.admit(request({ name: "child", parentId: ancestor.id }));
+    registry.transition(ancestor.id, "running");
+    registry.transition(ancestor.id, "completed");
+    const other = complete(registry, "other");
+
+    expect(registry.pruneTerminalRecords()).toEqual([other.id]);
+    expect(registry.get(ancestor.id)).toBeTruthy();
+
+    registry.transition(child.id, "running");
+    registry.transition(child.id, "completed");
+
+    expect(registry.pruneTerminalRecords()).toEqual([ancestor.id]);
+    expect(registry.get(child.id)).toBeTruthy();
   });
 });
 

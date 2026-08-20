@@ -14,6 +14,7 @@ export interface SubagentConfig {
   maxAgents: number;
   maxConcurrency: number;
   maxDepth: number;
+  maxRetained: number;
   socketDir?: string;
   cancelGraceMs: number;
 }

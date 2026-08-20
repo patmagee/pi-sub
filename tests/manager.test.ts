@@ -82,7 +82,7 @@ class FakeRunner {
 }
 
 function config(overrides: Partial<SubagentConfig> = {}): SubagentConfig {
-  return { maxAgents: 12, maxConcurrency: 12, maxDepth: 3, cancelGraceMs: 5000, ...overrides };
+  return { maxAgents: 12, maxConcurrency: 12, maxDepth: 3, maxRetained: 100, cancelGraceMs: 5000, ...overrides };
 }
 
 function role(overrides: Partial<RoleDefinition> = {}): RoleDefinition {
