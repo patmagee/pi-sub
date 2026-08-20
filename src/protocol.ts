@@ -38,6 +38,7 @@ export type ControlMessage =
   | { v: 1; type: "dispatch"; requestId: string; parentId: string; input: StartInput }
   | { v: 1; type: "dispatch_result"; requestId: string; receipt?: StartReceipt; error?: string }
   | { v: 1; type: "update"; agentId: string; text: string; promote: boolean }
+  | { v: 1; type: "session_ready"; agentId: string; sessionFile: string }
   | {
       v: 1;
       type: "inspect";
@@ -77,6 +78,7 @@ const MESSAGE_TYPES = new Set([
   "dispatch",
   "dispatch_result",
   "update",
+  "session_ready",
   "inspect",
   "inspect_result",
   "cancel",
@@ -200,6 +202,10 @@ export function validateControlMessage(value: unknown): ControlMessage {
       if (typeof message.promote !== "boolean") {
         throw new ProtocolError('Control message field "promote" must be boolean.');
       }
+      break;
+    case "session_ready":
+      stringField(message, "agentId");
+      stringField(message, "sessionFile");
       break;
     case "inspect": {
       requestFields(message);

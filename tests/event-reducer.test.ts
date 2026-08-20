@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { PiEventReducer } from "../src/event-reducer.js";
 
 describe("PiEventReducer", () => {
-  it("reduces emitted reasoning, text, tools, usage, summary, and session metadata", () => {
+  it("reduces emitted reasoning, text, tools, usage, and summary", () => {
     const reducer = new PiEventReducer();
     const events = [
-      { type: "session", id: "session-id", sessionFile: "/sessions/child.jsonl" },
+      { type: "session", version: 3, id: "session-id", timestamp: "2024-12-03T14:00:00.000Z", cwd: "/workspace" },
       {
         type: "message_update",
         assistantMessageEvent: { type: "thinking_delta", delta: "Check the boundary." },
@@ -66,7 +66,6 @@ describe("PiEventReducer", () => {
       turns: 1,
     });
     expect(snapshot.finalSummary).toBe("Final concise summary.");
-    expect(snapshot.sessionFile).toBe("/sessions/child.jsonl");
   });
 
   it("classifies an exit-zero assistant error as a terminal failure", () => {

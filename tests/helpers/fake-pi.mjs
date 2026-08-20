@@ -5,7 +5,13 @@ function emit(value) {
 }
 
 function complete() {
-  emit({ type: "session", id: "fake-session", sessionFile: "/tmp/fake-child.jsonl" });
+  emit({
+    type: "session",
+    version: 3,
+    id: "fake-session",
+    timestamp: "2024-12-03T14:00:00.000Z",
+    cwd: "/workspace",
+  });
   emit({
     type: "message_update",
     assistantMessageEvent: { type: "thinking_delta", delta: "Inspect the evidence." },
@@ -45,7 +51,13 @@ if (behavior === "complete") {
   process.stderr.write("fake crash\n" + "x".repeat(70 * 1024));
   process.exitCode = 2;
 } else if (behavior === "provider-error") {
-  emit({ type: "session", id: "fake-session", sessionFile: "/tmp/fake-child.jsonl" });
+  emit({
+    type: "session",
+    version: 3,
+    id: "fake-session",
+    timestamp: "2024-12-03T14:00:00.000Z",
+    cwd: "/workspace",
+  });
   emit({
     type: "message_end",
     message: {

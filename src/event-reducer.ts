@@ -9,7 +9,6 @@ export interface PiEventReducerSnapshot {
   diagnostics: string[];
   usage: UsageTotals;
   finalSummary?: string;
-  sessionFile?: string;
   terminalError?: string;
   reasoningEmitted: boolean;
   reasoningState: string;
@@ -56,7 +55,6 @@ export class PiEventReducer {
     turns: 0,
   };
   private finalSummary?: string;
-  private sessionFile?: string;
   private terminalError?: string;
   private reasoningEmitted = false;
 
@@ -88,17 +86,14 @@ export class PiEventReducer {
         : "Reasoning was not emitted by the provider.",
     };
     if (this.finalSummary !== undefined) snapshot.finalSummary = this.finalSummary;
-    if (this.sessionFile !== undefined) snapshot.sessionFile = this.sessionFile;
     if (this.terminalError !== undefined) snapshot.terminalError = this.terminalError;
     return snapshot;
   }
 
   private reduce(event: Record<string, unknown>): void {
     if (event.type === "session") {
-      const sessionFile = event.sessionFile ?? event.path;
-      if (typeof sessionFile === "string" && sessionFile.length > 0) {
-        this.sessionFile = sessionFile;
-      }
+      // Pi's session header carries no session-file path; the child reports it
+      // through the control socket using ctx.sessionManager.getSessionFile().
       return;
     }
 

@@ -11,7 +11,7 @@ import {
 
 type ClientMessage = Extract<
   ControlMessage,
-  { type: "dispatch" | "update" | "inspect" | "cancel" }
+  { type: "dispatch" | "update" | "session_ready" | "inspect" | "cancel" }
 >;
 type ParentMessage = Extract<ControlMessage, { type: "parent_message" }>;
 
@@ -41,19 +41,20 @@ function responseError(message: ClientMessage, error: string): ControlMessage | 
     case "cancel":
       return { v: 1, type: "cancel_result", requestId: message.requestId, cancelled: [], error };
     case "update":
+    case "session_ready":
       return undefined;
   }
 }
 
 function identityField(message: ClientMessage): "parentId" | "agentId" | "requesterId" {
   if (message.type === "dispatch") return "parentId";
-  if (message.type === "update") return "agentId";
+  if (message.type === "update" || message.type === "session_ready") return "agentId";
   return "requesterId";
 }
 
 function identityValue(message: ClientMessage): string {
   if (message.type === "dispatch") return message.parentId;
-  if (message.type === "update") return message.agentId;
+  if (message.type === "update" || message.type === "session_ready") return message.agentId;
   return message.requesterId;
 }
 
@@ -169,6 +170,7 @@ export class RootSocketServer {
     if (
       message.type !== "dispatch" &&
       message.type !== "update" &&
+      message.type !== "session_ready" &&
       message.type !== "inspect" &&
       message.type !== "cancel"
     ) {

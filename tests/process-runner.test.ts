@@ -70,7 +70,7 @@ describe("ProcessRunner", () => {
       status: "completed",
       exitCode: 0,
       forced: false,
-      snapshot: { finalSummary: "Fake child completed.", sessionFile: "/tmp/fake-child.jsonl" },
+      snapshot: { finalSummary: "Fake child completed." },
     });
     await expect(access(prompt.promptPath)).rejects.toMatchObject({ code: "ENOENT" });
   });

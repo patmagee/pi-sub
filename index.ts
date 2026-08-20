@@ -123,6 +123,10 @@ async function createRootRuntime(input: RuntimeFactoryInput): Promise<SessionRun
         manager.recordUpdate({ agentId: boundAgentId, text: message.text, promote: message.promote });
         return undefined;
       }
+      if (message.type === "session_ready") {
+        manager.recordSessionFile(boundAgentId, message.sessionFile);
+        return undefined;
+      }
       if (message.type === "inspect") {
         try {
           const result = await manager.inspect({
@@ -261,6 +265,11 @@ export async function createChildRuntime(
       ...(message.sessionFile ? { sessionFile: message.sessionFile } : {}),
     });
   });
+
+  const sessionFile = input.ctx.sessionManager.getSessionFile();
+  if (sessionFile) {
+    client.send({ v: 1, type: "session_ready", agentId, sessionFile });
+  }
 
   const controller: SubagentToolController = {
     async start(startInput, signal): Promise<StartReceipt> {

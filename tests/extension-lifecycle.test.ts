@@ -68,7 +68,10 @@ function context(trusted = true) {
     model: { provider: "anthropic", id: "parent" },
     thinkingLevel: "medium",
     modelRegistry: { find: vi.fn(() => ({})) },
-    sessionManager: { getSessionId: () => "root-session" },
+    sessionManager: {
+      getSessionId: () => "root-session",
+      getSessionFile: () => "/sessions/child-session.jsonl",
+    },
   };
 }
 
@@ -234,6 +237,12 @@ describe("child parent delivery", () => {
     );
 
     expect(fakeClient.subscribeParentMessages).toHaveBeenCalledTimes(1);
+    expect(fakeClient.send).toHaveBeenCalledWith({
+      v: 1,
+      type: "session_ready",
+      agentId: "agent-1",
+      sessionFile: "/sessions/child-session.jsonl",
+    });
 
     push!({ v: 1, type: "parent_message", agentId: "agent-1", childId: "child-2", kind: "update", text: "progress" });
     push!({

@@ -233,6 +233,13 @@ export class SubagentManager {
     };
   }
 
+  recordSessionFile(agentId: string, sessionFile: string): void {
+    const record = this.registry.get(agentId);
+    if (!record) throw new Error(`Unknown agent: ${agentId}.`);
+    this.registry.patch(agentId, { sessionFile });
+    this.notify();
+  }
+
   recordUpdate(input: RecordUpdateInput): void {
     const record = this.registry.get(input.agentId);
     if (!record) throw new Error(`Unknown agent: ${input.agentId}.`);
@@ -348,7 +355,6 @@ export class SubagentManager {
             activity: snapshot.activity,
             usage: snapshot.usage,
           };
-          if (snapshot.sessionFile !== undefined) patch.sessionFile = snapshot.sessionFile;
           if (snapshot.finalSummary !== undefined) patch.finalSummary = snapshot.finalSummary;
           this.registry.patch(id, patch);
           this.notify();
@@ -377,7 +383,6 @@ export class SubagentManager {
       activity: result.snapshot.activity,
       usage: result.snapshot.usage,
     };
-    if (result.snapshot.sessionFile !== undefined) patch.sessionFile = result.snapshot.sessionFile;
     if (result.snapshot.finalSummary !== undefined) patch.finalSummary = result.snapshot.finalSummary;
     this.registry.patch(id, patch);
 

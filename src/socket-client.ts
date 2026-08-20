@@ -10,7 +10,7 @@ type ResponseMessage = Extract<
   ControlMessage,
   { type: "dispatch_result" | "inspect_result" | "cancel_result" }
 >;
-type UpdateMessage = Extract<ControlMessage, { type: "update" }>;
+type UpdateMessage = Extract<ControlMessage, { type: "update" | "session_ready" }>;
 type ParentMessage = Extract<ControlMessage, { type: "parent_message" }>;
 
 export interface RootSocketClientOptions {

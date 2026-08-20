@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SubagentManager, type ParentContext } from "../src/manager.js";
 import type { PiEventReducerSnapshot } from "../src/event-reducer.js";
 import type { ProcessHandle, ProcessResult, ProcessRunnerCallbacks, ProcessRunnerInput } from "../src/process-runner.js";
@@ -58,7 +61,6 @@ class FakeRunner {
     const entry = this.processes.get(id)!;
     const snapshot: PiEventReducerSnapshot = {
       ...structuredClone(emptySnapshot),
-      sessionFile: `/sessions/${id}.jsonl`,
     };
     if (status === "completed") snapshot.finalSummary = `summary:${id}`;
     const result: ProcessResult = {
@@ -222,6 +224,37 @@ describe("SubagentManager routing", () => {
     await expect(
       instance.start({ name: "four", role: "scout", task: "four" }, instance.contextFor(three.id)),
     ).rejects.toThrow("Agent depth limit reached.");
+  });
+});
+
+describe("SubagentManager session files", () => {
+  const temporaryDirectories: string[] = [];
+  afterEach(async () => {
+    await Promise.all(
+      temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
+    );
+  });
+
+  it("records the session file for the bound agent and exposes it through summary and session inspection", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pi-sub-manager-session-"));
+    temporaryDirectories.push(directory);
+    const sessionFile = join(directory, "child.jsonl");
+    await writeFile(sessionFile, "session-header\nline-two\n");
+
+    const { instance } = manager();
+    const agent = await instance.start({ name: "scout", role: "scout", task: "one" }, rootContext);
+    const other = await instance.start({ name: "other", role: "scout", task: "two" }, rootContext);
+
+    instance.recordSessionFile(agent.id, sessionFile);
+
+    const summary = await instance.inspect({ targetId: agent.id, view: "summary" });
+    expect(summary.content).toMatchObject({ sessionFile });
+    const otherSummary = await instance.inspect({ targetId: other.id, view: "summary" });
+    expect((otherSummary.content as { sessionFile?: string }).sessionFile).toBeUndefined();
+
+    const session = await instance.inspect({ targetId: agent.id, view: "session", limit: 4 });
+    expect(session.content).toBe("sess");
+    expect(session.truncated).toBe(true);
   });
 });
 

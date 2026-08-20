@@ -73,6 +73,33 @@ describe("socket framing", () => {
     expect(() => encodeFrame(value)).toThrow(ProtocolError);
   });
 
+  it("validates session-ready messages and rejects missing, empty, mistyped, or oversized fields", () => {
+    expect(
+      encodeFrame({ v: 1, type: "session_ready", agentId: "agent-1", sessionFile: "/sessions/a.jsonl" }),
+    ).toBeInstanceOf(Buffer);
+    expect(() =>
+      new FrameDecoder().push(Buffer.from('{"v":1,"type":"session_ready","agentId":"agent-1"}\n')),
+    ).toThrow('Control message field "sessionFile" must be a non-empty string.');
+    expect(() =>
+      new FrameDecoder().push(
+        Buffer.from('{"v":1,"type":"session_ready","agentId":"","sessionFile":"/s"}\n'),
+      ),
+    ).toThrow('Control message field "agentId" must be a non-empty string.');
+    expect(() =>
+      new FrameDecoder().push(
+        Buffer.from('{"v":1,"type":"session_ready","agentId":"agent-1","sessionFile":5}\n'),
+      ),
+    ).toThrow('Control message field "sessionFile" must be a non-empty string.');
+    expect(() =>
+      encodeFrame({
+        v: 1,
+        type: "session_ready",
+        agentId: "agent-1",
+        sessionFile: "a".repeat(MAX_FRAME_BYTES),
+      }),
+    ).toThrow("Control frame exceeds 262144 bytes.");
+  });
+
   it("validates bounded inspection requests", () => {
     expect(() =>
       encodeFrame({
