@@ -65,7 +65,7 @@ export interface ManagerOptions {
     parentContext: ParentContext,
   ) => Promise<ProcessRunnerInput>;
   deliverToParent: (parentId: string | undefined, message: ParentDelivery) => void;
-  controlServer?: { close(): Promise<void> };
+  controlServer?: { close(): Promise<void>; revokeCredential?(agentId: string): void };
 }
 
 export interface InspectQuery {
@@ -368,6 +368,7 @@ export class SubagentManager {
       return undefined;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      this.options.controlServer?.revokeCredential?.(id);
       this.failAdmission(id, message);
       if (deliverOnFailure) {
         const failed = this.registry.get(id);
@@ -404,6 +405,7 @@ export class SubagentManager {
       record = this.registry.get(id)!;
     }
 
+    this.options.controlServer?.revokeCredential?.(id);
     this.deliverTerminal(record);
     this.notify();
     if (!this.shuttingDown) await this.scheduleNext();

@@ -190,7 +190,7 @@ async function createRootRuntime(input: RuntimeFactoryInput): Promise<SessionRun
         ...(record.effectiveModel ? { model: record.effectiveModel } : {}),
         ...(record.effectiveEffort ? { effort: record.effectiveEffort } : {}),
         socketPath: server.socketPath,
-        token: server.token,
+        token: server.issueCredential(record.id),
         agentId: record.id,
         parentId: record.parentId ?? input.ctx.sessionManager.getSessionId(),
         depth: record.depth,

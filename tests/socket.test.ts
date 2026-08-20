@@ -63,7 +63,7 @@ describe("root socket server and client", () => {
     expect((await stat(server.socketDirectory)).mode & 0o777).toBe(0o700);
     const client = await RootSocketClient.connect({
       socketPath: server.socketPath,
-      token: server.token,
+      token: server.issueCredential("agent-1"),
       agentId: "agent-1",
     });
 
@@ -121,32 +121,101 @@ describe("root socket server and client", () => {
     await expect(access(socketPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("rejects invalid tokens and identity spoofing", async () => {
+  it("binds each credential to a single agent identity", async () => {
+    const server = await RootSocketServer.start({
+      socketParentDir: await socketParent(),
+      authenticateAgent: () => true,
+      onMessage: async (message) =>
+        message.type === "dispatch"
+          ? {
+              v: 1,
+              type: "dispatch_result",
+              requestId: message.requestId,
+              receipt: { id: "child", displayName: "child", status: "starting", depth: 2 },
+            }
+          : undefined,
+    });
+
+    const agentCredential = server.issueCredential("agent-1");
+    server.issueCredential("agent-2");
+    server.issueCredential("parent-1");
+    const childCredential = server.issueCredential("child-1");
+
+    const issued = await RootSocketClient.connect({
+      socketPath: server.socketPath,
+      token: agentCredential,
+      agentId: "agent-1",
+    });
+    await expect(
+      issued.request({
+        v: 1,
+        type: "dispatch",
+        requestId: "ok",
+        parentId: "agent-1",
+        input: { name: "child", role: "scout", task: "inspect" },
+      }),
+    ).resolves.toMatchObject({ type: "dispatch_result", requestId: "ok" });
+    issued.close();
+
+    const sibling = await RootSocketClient.connect({
+      socketPath: server.socketPath,
+      token: agentCredential,
+      agentId: "agent-2",
+    });
+    await expect(
+      sibling.request({
+        v: 1,
+        type: "dispatch",
+        requestId: "sibling",
+        parentId: "agent-2",
+        input: { name: "child", role: "scout", task: "inspect" },
+      }),
+    ).rejects.toThrow("Root control socket closed.");
+
+    const child = await RootSocketClient.connect({
+      socketPath: server.socketPath,
+      token: childCredential,
+      agentId: "parent-1",
+    });
+    await expect(
+      child.request({
+        v: 1,
+        type: "dispatch",
+        requestId: "escalate",
+        parentId: "parent-1",
+        input: { name: "child", role: "scout", task: "inspect" },
+      }),
+    ).rejects.toThrow("Root control socket closed.");
+
+    server.revokeCredential("agent-1");
+    const revoked = await RootSocketClient.connect({
+      socketPath: server.socketPath,
+      token: agentCredential,
+      agentId: "agent-1",
+    });
+    await expect(
+      revoked.request({
+        v: 1,
+        type: "dispatch",
+        requestId: "after-revoke",
+        parentId: "agent-1",
+        input: { name: "child", role: "scout", task: "inspect" },
+      }),
+    ).rejects.toThrow("Root control socket closed.");
+
+    await server.close();
+  });
+
+  it("rejects identity spoofing across bound connections", async () => {
     const server = await RootSocketServer.start({
       socketParentDir: await socketParent(),
       authenticateAgent: (agentId) => agentId === "agent-1",
       onMessage: async () => undefined,
     });
 
-    const invalid = await RootSocketClient.connect({
-      socketPath: server.socketPath,
-      token: "wrong-token",
-      agentId: "agent-1",
-    });
-    await expect(
-      invalid.request({
-        v: 1,
-        type: "cancel",
-        requestId: "bad-auth",
-        requesterId: "agent-1",
-        targetId: "agent-1",
-        scope: "one",
-      }),
-    ).rejects.toThrow("Root control socket closed.");
-
     const client = await RootSocketClient.connect({
       socketPath: server.socketPath,
-      token: server.token,
+      token: server.issueCredential("agent-1"),
       agentId: "agent-1",
     });
     await expect(
@@ -174,7 +243,7 @@ describe("root socket server and client", () => {
     });
     const client = await RootSocketClient.connect({
       socketPath: server.socketPath,
-      token: server.token,
+      token: server.issueCredential("agent-1"),
       agentId: "agent-1",
     });
 

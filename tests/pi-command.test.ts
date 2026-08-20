@@ -102,6 +102,32 @@ describe("buildPiArgs", () => {
     await expect(access(built.promptPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("gives each child only its own agent identifier and credential", async () => {
+    const tempParentDir = await temporaryDirectory();
+    const base = {
+      prompt: "Child assignment.",
+      tempParentDir,
+      extensionPath: "/extension/index.ts",
+      permission: "read-only" as const,
+      parentTools: ["read"],
+      socketPath: "/tmp/root.sock",
+      parentId: "root",
+      depth: 1,
+      rootSessionId: "root-session",
+      childSessionId: "child-session",
+    };
+    const first = await buildPiArgs({ ...base, agentId: "agent-1", token: "credential-1" });
+    const second = await buildPiArgs({ ...base, agentId: "agent-2", token: "credential-2" });
+
+    expect(first.env).toMatchObject({ PI_SUB_AGENT_ID: "agent-1", PI_SUB_ROOT_TOKEN: "credential-1" });
+    expect(second.env).toMatchObject({ PI_SUB_AGENT_ID: "agent-2", PI_SUB_ROOT_TOKEN: "credential-2" });
+    expect(first.env.PI_SUB_ROOT_TOKEN).not.toBe(second.env.PI_SUB_ROOT_TOKEN);
+    expect(first.args.join(" ")).not.toContain("credential-1");
+
+    await first.cleanup();
+    await second.cleanup();
+  });
+
   it("deduplicates inherited tools while preserving parent order", async () => {
     const built = await buildPiArgs({
       prompt: "Child assignment.",

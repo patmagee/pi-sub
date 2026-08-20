@@ -59,12 +59,12 @@ function identityValue(message: ClientMessage): string {
 }
 
 export class RootSocketServer {
-  readonly token = randomBytes(32).toString("hex");
   readonly socketDirectory: string;
   readonly socketPath: string;
 
   private readonly connections = new Set<ConnectionState>();
   private readonly agents = new Map<string, ConnectionState>();
+  private readonly credentials = new Map<string, Buffer>();
   private closed = false;
 
   private constructor(
@@ -103,6 +103,16 @@ export class RootSocketServer {
     }
   }
 
+  issueCredential(agentId: string): string {
+    const value = randomBytes(32).toString("hex");
+    this.credentials.set(agentId, Buffer.from(value, "utf8"));
+    return value;
+  }
+
+  revokeCredential(agentId: string): void {
+    this.credentials.delete(agentId);
+  }
+
   sendParentMessage(message: ParentMessage): boolean {
     const connection = this.agents.get(message.agentId);
     if (!connection || connection.socket.destroyed) return false;
@@ -113,6 +123,7 @@ export class RootSocketServer {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    this.credentials.clear();
     for (const connection of this.connections) connection.socket.destroy();
 
     await new Promise<void>((resolve, reject) => {
@@ -149,9 +160,10 @@ export class RootSocketServer {
         state.socket.destroy();
         return;
       }
-      const expected = Buffer.from(this.token, "utf8");
+      const expected = this.credentials.get(message.agentId);
       const received = Buffer.from(message.token, "utf8");
       if (
+        !expected ||
         expected.byteLength !== received.byteLength ||
         !timingSafeEqual(expected, received) ||
         !(await this.options.authenticateAgent(message.agentId))
