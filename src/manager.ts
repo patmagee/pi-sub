@@ -400,7 +400,11 @@ export class SubagentManager {
       } else if (result.status === "cancelled") {
         record = this.registry.transition(id, "cancelled", result.forced ? "force-killed" : "cancelled");
       } else {
-        record = this.registry.transition(id, "failed", result.stderr || "Child process failed.");
+        record = this.registry.transition(
+          id,
+          "failed",
+          result.snapshot.terminalError || result.stderr || "Child process failed.",
+        );
       }
     } else {
       record = this.registry.get(id)!;
