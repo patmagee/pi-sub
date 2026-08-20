@@ -16,7 +16,7 @@ import { buildPiArgs, resolvePiInvocation } from "./src/pi-command.js";
 import { ProcessRunner } from "./src/process-runner.js";
 import type { ControlMessage, InspectResult, StartReceipt } from "./src/protocol.js";
 import { discoverRoles } from "./src/roles.js";
-import { RootSocketClient } from "./src/socket-client.js";
+import { RootSocketClient, type RootSocketClientOptions } from "./src/socket-client.js";
 import { RootSocketServer } from "./src/socket-server.js";
 import {
   registerSubagentTools,
@@ -237,11 +237,30 @@ async function createRootRuntime(input: RuntimeFactoryInput): Promise<SessionRun
   };
 }
 
-async function createChildRuntime(input: RuntimeFactoryInput): Promise<SessionRuntime> {
+export interface ChildRuntimeDependencies {
+  connect(options: RootSocketClientOptions): Promise<RootSocketClient>;
+}
+
+const defaultChildDependencies: ChildRuntimeDependencies = {
+  connect: (options) => RootSocketClient.connect(options),
+};
+
+export async function createChildRuntime(
+  input: RuntimeFactoryInput,
+  childDependencies: ChildRuntimeDependencies = defaultChildDependencies,
+): Promise<SessionRuntime> {
   const socketPath = requiredEnvironment(input.environment, "PI_SUB_ROOT_SOCKET");
   const token = requiredEnvironment(input.environment, "PI_SUB_ROOT_TOKEN");
   const agentId = requiredEnvironment(input.environment, "PI_SUB_AGENT_ID");
-  const client = await RootSocketClient.connect({ socketPath, token, agentId });
+  const client = await childDependencies.connect({ socketPath, token, agentId });
+  const unsubscribeParentMessages = client.subscribeParentMessages((message) => {
+    sendParentDelivery(input.pi, {
+      childId: message.childId,
+      kind: message.kind,
+      text: message.text,
+      ...(message.sessionFile ? { sessionFile: message.sessionFile } : {}),
+    });
+  });
 
   const controller: SubagentToolController = {
     async start(startInput, signal): Promise<StartReceipt> {
@@ -305,7 +324,10 @@ async function createChildRuntime(input: RuntimeFactoryInput): Promise<SessionRu
   return {
     controller,
     diagnostics: [],
-    shutdown: async () => client.close(),
+    shutdown: async () => {
+      unsubscribeParentMessages();
+      client.close();
+    },
   };
 }
 

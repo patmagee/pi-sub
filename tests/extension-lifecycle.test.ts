@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createChildRuntime,
   createSubagentExtension,
   sendParentDelivery,
   type SessionRuntime,
@@ -201,6 +202,66 @@ describe("extension lifecycle", () => {
       expect(session.shutdown).toHaveBeenCalledWith(reason);
     },
   );
+});
+
+describe("child parent delivery", () => {
+  it("routes unsolicited parent messages into the child context and disposes the subscription before close", async () => {
+    const pi = fakePi();
+    let push: ((message: any) => void) | undefined;
+    const unsubscribe = vi.fn();
+    const close = vi.fn();
+    const fakeClient = {
+      request: vi.fn(),
+      send: vi.fn(),
+      subscribeParentMessages: vi.fn((listener: (message: any) => void) => {
+        push = listener;
+        return unsubscribe;
+      }),
+      close,
+    };
+    const session = await createChildRuntime(
+      {
+        pi: pi as never,
+        ctx: context() as never,
+        environment: {
+          PI_SUB_ROOT_SOCKET: "/tmp/root.sock",
+          PI_SUB_ROOT_TOKEN: "token",
+          PI_SUB_AGENT_ID: "agent-1",
+        },
+        projectTrusted: true,
+      },
+      { connect: async () => fakeClient as never },
+    );
+
+    expect(fakeClient.subscribeParentMessages).toHaveBeenCalledTimes(1);
+
+    push!({ v: 1, type: "parent_message", agentId: "agent-1", childId: "child-2", kind: "update", text: "progress" });
+    push!({
+      v: 1,
+      type: "parent_message",
+      agentId: "agent-1",
+      childId: "child-2",
+      kind: "complete",
+      text: "done",
+      sessionFile: "/sessions/child.jsonl",
+    });
+
+    expect(pi.messages).toEqual([
+      expect.objectContaining({
+        message: expect.objectContaining({ customType: "subagent-update", content: "progress" }),
+        options: { deliverAs: "steer", triggerTurn: true },
+      }),
+      expect.objectContaining({
+        message: expect.objectContaining({ customType: "subagent-complete", content: "done" }),
+        options: { deliverAs: "followUp", triggerTurn: true },
+      }),
+    ]);
+
+    await session.shutdown("quit");
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(unsubscribe.mock.invocationCallOrder[0]!).toBeLessThan(close.mock.invocationCallOrder[0]!);
+  });
 });
 
 describe("parent delivery", () => {
