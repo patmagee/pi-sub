@@ -122,9 +122,10 @@ describe("root socket server and client", () => {
   });
 
   it("binds each credential to a single agent identity", async () => {
+    const admitted = new Set(["agent-1", "agent-2", "parent-1", "child-1"]);
     const server = await RootSocketServer.start({
       socketParentDir: await socketParent(),
-      authenticateAgent: () => true,
+      authenticateAgent: (agentId) => admitted.has(agentId),
       onMessage: async (message) =>
         message.type === "dispatch"
           ? {
@@ -183,6 +184,22 @@ describe("root socket server and client", () => {
         type: "dispatch",
         requestId: "escalate",
         parentId: "parent-1",
+        input: { name: "child", role: "scout", task: "inspect" },
+      }),
+    ).rejects.toThrow("Root control socket closed.");
+
+    const ghostCredential = server.issueCredential("ghost-1");
+    const ghost = await RootSocketClient.connect({
+      socketPath: server.socketPath,
+      token: ghostCredential,
+      agentId: "ghost-1",
+    });
+    await expect(
+      ghost.request({
+        v: 1,
+        type: "dispatch",
+        requestId: "ghost",
+        parentId: "ghost-1",
         input: { name: "child", role: "scout", task: "inspect" },
       }),
     ).rejects.toThrow("Root control socket closed.");
