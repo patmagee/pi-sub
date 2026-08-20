@@ -111,6 +111,8 @@ The child receives an appended prompt that contains:
 
 The child does not receive the parent transcript. Turn-specific parent messages and exploratory tool output remain isolated.
 
+This is prompt isolation, not process isolation. Two boundaries are in play, and they are different. Prompt isolation controls the appended prompt: the raw parent conversation history is excluded, and the only main-session content the child sees is the optional context summary the parent writes. Process isolation is not claimed here. The child is a normal Pi process in the assigned working directory, so it still loads the standard governing resources that Pi discovers on its own: user instructions, trusted-project instructions, skills, extensions, and context files. If a fact matters for the child's judgment and does not live in those governing resources, the parent must place it in the assignment or the context summary.
+
 ### Local control socket
 
 Nested extension instances connect to the root manager through a private local socket. The root manager remains the only process that admits and launches descendants. This gives one authoritative place for total limits, depth checks, naming, visibility, and cancellation.

@@ -103,6 +103,8 @@ A child does not receive the parent transcript. Its prompt contains only:
 
 This keeps delegation explicit. Put every fact needed to judge the result in the assignment or `contextSummary`.
 
+The isolation here is prompt isolation, not process isolation. These are two different boundaries. Prompt isolation means the raw parent conversation history is excluded from the child's prompt, and the only main-session content the child sees is the `contextSummary` you write. Process isolation is not claimed. The child is a normal Pi process in the assigned working directory, so it still loads the governing context that Pi discovers on its own: your user instructions, trusted-project instructions, skills, extensions, and context files. If a fact matters for the child's judgment and is not already in that governing context, put it in the assignment or the `contextSummary`.
+
 ## Models and effort
 
 Model selection uses this order:

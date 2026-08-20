@@ -128,6 +128,56 @@ describe("buildPiArgs", () => {
     await second.cleanup();
   });
 
+  it("replaces stale inherited control environment variables for each child", async () => {
+    const stale = {
+      PI_SUB_ROOT_SOCKET: "/stale.sock",
+      PI_SUB_ROOT_TOKEN: "stale-token",
+      PI_SUB_AGENT_ID: "stale-agent",
+      PI_SUB_PARENT_ID: "stale-parent",
+      PI_SUB_DEPTH: "9",
+      PI_SUB_ROOT_SESSION_ID: "stale-root",
+    };
+    const saved = new Map<string, string | undefined>();
+    for (const [key, value] of Object.entries(stale)) {
+      saved.set(key, process.env[key]);
+      process.env[key] = value;
+    }
+    try {
+      const built = await buildPiArgs({
+        prompt: "Child assignment.",
+        tempParentDir: await temporaryDirectory(),
+        extensionPath: "/extension/index.ts",
+        permission: "read-only",
+        parentTools: ["read"],
+        socketPath: "/fresh.sock",
+        token: "fresh-token",
+        agentId: "fresh-agent",
+        parentId: "fresh-parent",
+        depth: 2,
+        rootSessionId: "fresh-root",
+        childSessionId: "child-session",
+      });
+
+      expect(built.env).toMatchObject({
+        PI_SUB_ROOT_SOCKET: "/fresh.sock",
+        PI_SUB_ROOT_TOKEN: "fresh-token",
+        PI_SUB_AGENT_ID: "fresh-agent",
+        PI_SUB_PARENT_ID: "fresh-parent",
+        PI_SUB_DEPTH: "2",
+        PI_SUB_ROOT_SESSION_ID: "fresh-root",
+      });
+      for (const value of Object.values(stale)) {
+        expect(Object.values(built.env)).not.toContain(value);
+      }
+      await built.cleanup();
+    } finally {
+      for (const [key, value] of saved) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   it("deduplicates inherited tools while preserving parent order", async () => {
     const built = await buildPiArgs({
       prompt: "Child assignment.",
