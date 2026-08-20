@@ -24,7 +24,7 @@ const LIVE_STATUSES = new Set<AgentStatus>(["queued", "starting", "running"]);
 const RUNNING_STATUSES = new Set<AgentStatus>(["starting", "running"]);
 const TERMINAL_STATUSES = new Set<AgentStatus>(["completed", "failed", "cancelled"]);
 const LEGAL_TRANSITIONS: Readonly<Record<AgentStatus, ReadonlySet<AgentStatus>>> = {
-  queued: new Set(["starting"]),
+  queued: new Set(["starting", "cancelled"]),
   starting: new Set(["running", "failed", "cancelled"]),
   running: new Set(["completed", "failed", "cancelled"]),
   completed: new Set(),
@@ -35,6 +35,19 @@ const LEGAL_TRANSITIONS: Readonly<Record<AgentStatus, ReadonlySet<AgentStatus>>>
 function copyRecord(record: AgentRecord): AgentRecord {
   return structuredClone(record);
 }
+
+export type AgentRecordPatch = Partial<
+  Pick<
+    AgentRecord,
+    | "effectiveModel"
+    | "effectiveEffort"
+    | "pid"
+    | "sessionFile"
+    | "activity"
+    | "finalSummary"
+    | "usage"
+  >
+>;
 
 export class AgentRegistry {
   private readonly records = new Map<string, AgentRecord>();
@@ -127,6 +140,20 @@ export class AgentRegistry {
     if (status === "starting" || status === "running") record.startedAt ??= now;
     if (TERMINAL_STATUSES.has(status)) record.finishedAt = now;
     if (reason !== undefined) record.statusReason = reason;
+    return copyRecord(record);
+  }
+
+  patch(id: string, patch: AgentRecordPatch): AgentRecord {
+    const record = this.records.get(id);
+    if (!record) throw new Error(`Unknown agent: ${id}.`);
+    Object.assign(record, structuredClone(patch));
+    return copyRecord(record);
+  }
+
+  appendUpdate(id: string, update: AgentRecord["updates"][number]): AgentRecord {
+    const record = this.records.get(id);
+    if (!record) throw new Error(`Unknown agent: ${id}.`);
+    record.updates.push(structuredClone(update));
     return copyRecord(record);
   }
 
