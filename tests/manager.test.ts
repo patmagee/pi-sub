@@ -301,6 +301,29 @@ describe("SubagentManager session files", () => {
   });
 });
 
+describe("SubagentManager retention", () => {
+  it("releases the parent context when a terminal record is pruned", async () => {
+    const { instance, runner } = manager({ config: config({ maxRetained: 1 }) });
+    const first = await instance.start({ name: "first", role: "scout", task: "one" }, rootContext);
+    runner.finish(first.id);
+    await vi.waitFor(async () => {
+      expect((await instance.inspect({ targetId: first.id, view: "metadata" })).content).toMatchObject({
+        status: "completed",
+      });
+    });
+
+    const second = await instance.start({ name: "second", role: "scout", task: "two" }, rootContext);
+    runner.finish(second.id);
+    await vi.waitFor(() =>
+      expect(instance.inspect({ targetId: first.id, view: "metadata" })).rejects.toThrow(
+        `Unknown agent: ${first.id}.`,
+      ),
+    );
+
+    expect(() => instance.contextFor(first.id)).toThrow(`Unknown agent context: ${first.id}.`);
+  });
+});
+
 describe("SubagentManager cancellation and shutdown", () => {
   it("cancels descendants before parents and rejects cancellation outside a subtree", async () => {
     const { instance, runner } = manager();

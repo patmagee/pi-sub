@@ -266,6 +266,9 @@ export async function createChildRuntime(
     });
   });
 
+  // Pi creates the session file before it emits session_start, so reading the
+  // path once here is stable for the child's lifetime. If a future Pi deferred
+  // file creation past the first turn, this would need to re-report the path.
   const sessionFile = input.ctx.sessionManager.getSessionFile();
   if (sessionFile) {
     client.send({ v: 1, type: "session_ready", agentId, sessionFile });
