@@ -22,6 +22,10 @@ import {
   registerSubagentTools,
   type SubagentToolController,
 } from "./src/tools.js";
+import { SubagentDashboard } from "./src/tui/dashboard.js";
+import { createStatusEditorFactory } from "./src/tui/editor-wrapper.js";
+import { SubagentStatusStrip } from "./src/tui/status-strip.js";
+import type { AgentRecord } from "./src/types.js";
 
 const extensionPath = fileURLToPath(import.meta.url);
 
@@ -29,6 +33,7 @@ export interface SessionRuntime {
   controller: SubagentToolController;
   shutdown(reason: string): Promise<void>;
   diagnostics: string[];
+  subscribe?(listener: (records: AgentRecord[]) => void): () => void;
 }
 
 export interface RuntimeFactoryInput {
@@ -227,6 +232,7 @@ async function createRootRuntime(input: RuntimeFactoryInput): Promise<SessionRun
   return {
     controller,
     diagnostics: [...parsed.diagnostics, ...discovered.diagnostics],
+    subscribe: (listener) => manager.subscribe(listener),
     shutdown: (reason) => manager.shutdown(reason),
   };
 }
@@ -315,6 +321,8 @@ export function createSubagentExtension(
   return (pi) => {
     let runtime: SessionRuntime | undefined;
     let cleanup: Promise<void> | undefined;
+    let disposeTui: (() => void) | undefined;
+    let openDashboard: ((initialId?: string) => Promise<void>) | undefined;
 
     const proxy: SubagentToolController = {
       start: (input, signal) => activeRuntime().controller.start(input, signal),
@@ -347,7 +355,8 @@ export function createSubagentExtension(
     pi.registerCommand("subagents", {
       description: "Show subagent status and management controls",
       handler: async (_args, ctx) => {
-        ctx.ui.notify("The subagent dashboard is available when TUI integration is active.", "info");
+        if (openDashboard) await openDashboard();
+        else ctx.ui.notify("The subagent dashboard is available only in an active TUI session.", "info");
       },
     });
 
@@ -366,10 +375,75 @@ export function createSubagentExtension(
       if (ctx.hasUI) {
         for (const diagnostic of runtime.diagnostics) ctx.ui.notify(diagnostic, "warning");
       }
+      if (ctx.mode === "tui" && runtime.subscribe) {
+        let retained: AgentRecord[] = [];
+        let widgetTui: { requestRender(): void } | undefined;
+        const strip = new SubagentStatusStrip([], ctx.ui.theme, {
+          openAgent: (id) => {
+            void openDashboard?.(id);
+          },
+          invalidated: () => widgetTui?.requestRender(),
+        });
+        const unsubscribe = runtime.subscribe((records) => {
+          retained = records;
+          strip.setRecords(records);
+        });
+        openDashboard = async (initialId) => {
+          const active = activeRuntime();
+          await ctx.ui.custom<void>((tui, theme, _keybindings, done) =>
+            new SubagentDashboard(
+              retained,
+              theme,
+              {
+                root: true,
+                now: () => Date.now(),
+                requestRender: () => tui.requestRender(),
+                close: () => done(undefined),
+                confirm: (scope, targetId) =>
+                  ctx.ui.confirm(
+                    scope === "all" ? "Cancel all subagents?" : "Cancel subagent tree?",
+                    scope === "all"
+                      ? "This stops every live subagent in the session."
+                      : `This stops ${targetId ?? "the selected agent"} and all descendants.`,
+                  ),
+                cancel: (scope, targetId) =>
+                  active.controller.cancel({
+                    scope,
+                    ...(targetId ? { targetId } : {}),
+                  }),
+                subscribe: (listener) => active.subscribe!(listener),
+              },
+              initialId ? { initialId } : {},
+            ),
+          );
+        };
+        const previousEditor = ctx.ui.getEditorComponent();
+        ctx.ui.setWidget(
+          "pi-subagents",
+          (tui) => {
+            widgetTui = tui;
+            return strip;
+          },
+          { placement: "belowEditor" },
+        );
+        ctx.ui.setEditorComponent(createStatusEditorFactory(previousEditor, strip));
+        disposeTui = () => {
+          unsubscribe();
+          ctx.ui.setWidget("pi-subagents", undefined);
+          ctx.ui.setEditorComponent(previousEditor);
+          widgetTui = undefined;
+          openDashboard = undefined;
+        };
+      }
     });
 
     pi.on("session_shutdown", async (event) => {
       if (!runtime) return;
+      if (disposeTui) {
+        const dispose = disposeTui;
+        disposeTui = undefined;
+        dispose();
+      }
       cleanup ??= runtime.shutdown(event.reason);
       await cleanup;
     });

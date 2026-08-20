@@ -55,7 +55,15 @@ function context(trusted = true) {
     mode: "tui",
     hasUI: true,
     isProjectTrusted: vi.fn(() => trusted),
-    ui: { notify: vi.fn() },
+    ui: {
+      notify: vi.fn(),
+      setWidget: vi.fn(),
+      getEditorComponent: vi.fn<() => any>(() => undefined),
+      setEditorComponent: vi.fn(),
+      custom: vi.fn(async () => undefined),
+      confirm: vi.fn(async () => true),
+      theme: { fg: (_color: string, text: string) => text, bold: (text: string) => text },
+    },
     model: { provider: "anthropic", id: "parent" },
     thinkingLevel: "medium",
     modelRegistry: { find: vi.fn(() => ({})) },
@@ -108,6 +116,52 @@ describe("extension lifecycle", () => {
       "subagent_inspect",
       "subagent_cancel",
     ]);
+  });
+
+  it("installs root TUI composition and removes it during shutdown", async () => {
+    const pi = fakePi();
+    const configured = dependencies();
+    const session = runtime();
+    session.subscribe = (listener) => {
+      listener([]);
+      return vi.fn();
+    };
+    configured.root.mockResolvedValue(session);
+    createSubagentExtension(configured.dependencies)(pi as never);
+    const ctx = context();
+    const previousEditor = vi.fn();
+    ctx.ui.getEditorComponent.mockReturnValue(previousEditor);
+
+    await pi.fire("session_start", { reason: "startup" }, ctx);
+
+    expect(ctx.ui.setWidget).toHaveBeenCalledWith(
+      "pi-subagents",
+      expect.any(Function),
+      { placement: "belowEditor" },
+    );
+    expect(ctx.ui.setEditorComponent).toHaveBeenCalledWith(expect.any(Function));
+    await pi.commands.get("subagents").handler("", ctx);
+    expect(ctx.ui.custom).toHaveBeenCalled();
+
+    await pi.fire("session_shutdown", { reason: "reload" }, ctx);
+    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("pi-subagents", undefined);
+    expect(ctx.ui.setEditorComponent).toHaveBeenLastCalledWith(previousEditor);
+  });
+
+  it("does not install custom components outside TUI mode", async () => {
+    const pi = fakePi();
+    const configured = dependencies();
+    const session = runtime();
+    session.subscribe = () => vi.fn();
+    configured.root.mockResolvedValue(session);
+    createSubagentExtension(configured.dependencies)(pi as never);
+    const ctx = context();
+    ctx.mode = "print";
+
+    await pi.fire("session_start", { reason: "startup" }, ctx);
+
+    expect(ctx.ui.setWidget).not.toHaveBeenCalled();
+    expect(ctx.ui.setEditorComponent).not.toHaveBeenCalled();
   });
 
   it("creates only a child socket runtime when root environment is present", async () => {
