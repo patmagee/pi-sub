@@ -179,4 +179,20 @@ npm test
 npm run typecheck
 ```
 
-The test suite uses fake child processes and does not call a model provider. Real-model integration is intentionally opt-in and is not run by the default test command.
+The test suite uses fake child processes and does not call a model provider.
+
+Verify local Unix socket access, which matters when Pi runs inside a sandbox such as nono:
+
+```bash
+npm run smoke:socket
+```
+
+The command prints `socket smoke test passed` when a private socket can be created, authenticated, and exchanged over. If a sandbox denies the socket directory, diagnose the exact denied path and operation with `nono why --self --path <resolved-socket-directory> --op readwrite`. This project never edits active nono profiles for you.
+
+Real-model integration is intentionally opt-in and is not run by the default test command. It uses model credentials and can incur cost. Enable it with both variables set:
+
+```bash
+PI_SUB_REAL_INTEGRATION=1 PI_SUB_TEST_MODEL=<provider/model> npm test -- tests/integration/real-pi.test.ts
+```
+
+Without `PI_SUB_REAL_INTEGRATION=1` the real-model suite is skipped. When it is set but `PI_SUB_TEST_MODEL` is absent, the suite fails with a clear prerequisite message rather than calling a provider.

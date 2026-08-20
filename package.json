@@ -24,7 +24,8 @@
   "scripts": {
     "test": "vitest --run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "smoke:socket": "node scripts/socket-smoke.mjs"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
