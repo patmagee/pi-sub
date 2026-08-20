@@ -110,7 +110,7 @@ export function registerSubagentTools(
         content: [
           {
             type: "text",
-            text: `${receipt.displayName} [${receipt.status}] depth=${receipt.depth}${modelText}${effortText} permission=${permission}${receipt.error ? ` error=${receipt.error}` : ""}`,
+            text: `${receipt.displayName} [${receipt.status}] id=${receipt.id} depth=${receipt.depth}${modelText}${effortText} permission=${permission}${receipt.error ? ` error=${receipt.error}` : ""}`,
           },
         ],
         details: receipt,

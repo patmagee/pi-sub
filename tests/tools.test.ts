@@ -99,6 +99,7 @@ describe("registered subagent tools", () => {
       {},
     );
     expect(result.content[0].text).toContain("scout [starting]");
+    expect(result.content[0].text).toContain("agent-1");
     expect(result.details).toMatchObject({ id: "agent-1", depth: 1 });
   });
 
