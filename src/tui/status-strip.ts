@@ -26,6 +26,10 @@ const statePresentation: Record<AgentStatus, { symbol: string; label: string; co
   cancelled: { symbol: "–", label: "cancelled", color: "dim" },
 };
 
+function isLive(record: AgentRecord): boolean {
+  return record.status === "queued" || record.status === "starting" || record.status === "running";
+}
+
 export class SubagentStatusStrip implements Component {
   private records: AgentRecord[];
   private selection = 0;
@@ -37,7 +41,7 @@ export class SubagentStatusStrip implements Component {
     private readonly theme: StatusStripTheme,
     private readonly callbacks: StatusStripCallbacks,
   ) {
-    this.records = records.map((record) => structuredClone(record));
+    this.records = records.filter(isLive).map((record) => structuredClone(record));
   }
 
   get selectedId(): string | undefined {
@@ -51,7 +55,7 @@ export class SubagentStatusStrip implements Component {
   setRecords(records: readonly AgentRecord[]): void {
     const selectedId = this.selectedId;
     const previousIndex = this.selection;
-    this.records = records.map((record) => structuredClone(record));
+    this.records = records.filter(isLive).map((record) => structuredClone(record));
     const retainedIndex = selectedId
       ? this.records.findIndex((record) => record.id === selectedId)
       : -1;
@@ -94,7 +98,7 @@ export class SubagentStatusStrip implements Component {
       this.focused ? this.theme.fg("accent", "Subagents (focused)") : this.theme.fg("muted", "Subagents"),
     ];
     if (this.records.length === 0) {
-      logicalLines.push(this.theme.fg("dim", "No retained subagents."));
+      logicalLines.push(this.theme.fg("dim", "No live subagents."));
     } else {
       for (const [index, record] of this.records.entries()) {
         const state = statePresentation[record.status];

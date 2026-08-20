@@ -41,26 +41,41 @@ function record(id: string, status: AgentStatus, parentId?: string): AgentRecord
 }
 
 describe("SubagentStatusStrip", () => {
-  it("renders every retained agent with a state symbol and expanded accessible labels", () => {
-    const records = [
+  it("renders only live agents and hides terminal ones", () => {
+    const live = [
       record("queued-agent", "queued"),
+      record("starting-agent", "starting"),
       record("running-agent", "running"),
+    ];
+    const terminal = [
       record("completed-agent", "completed"),
       record("failed-agent", "failed"),
       record("cancelled-agent", "cancelled"),
     ];
-    const strip = new SubagentStatusStrip(records, theme, { openAgent: vi.fn() });
+    const strip = new SubagentStatusStrip([...live, ...terminal], theme, { openAgent: vi.fn() });
     strip.setFocused(true);
     const text = strip.render(120).map(stripTerminalSequences).join("\n");
 
-    for (const entry of records) expect(text).toContain(entry.displayName);
-    for (const label of ["queued", "running", "completed", "failed", "cancelled"]) expect(text).toContain(label);
-    expect(text).toMatch(/[○◐●✕–]/u);
+    for (const entry of live) expect(text).toContain(entry.displayName);
+    for (const entry of terminal) expect(text).not.toContain(entry.displayName);
+    for (const label of ["queued", "starting", "running"]) expect(text).toContain(label);
+    expect(text).toMatch(/[○◐]/u);
+  });
+
+  it("shows the empty live-state message when every retained agent is terminal", () => {
+    const strip = new SubagentStatusStrip(
+      [record("completed-agent", "completed"), record("failed-agent", "failed")],
+      theme,
+      { openAgent: vi.fn() },
+    );
+    const text = strip.render(120).map(stripTerminalSequences).join("\n");
+    expect(text).toContain("No live subagents.");
+    expect(text).not.toContain("completed-agent");
   });
 
   it("wraps narrow ANSI-colored output without exceeding width or leaving open escapes", () => {
     const strip = new SubagentStatusStrip(
-      [record("a-very-long-running-agent-name", "running"), record("another-agent", "failed")],
+      [record("a-very-long-running-agent-name", "running"), record("another-agent", "starting")],
       theme,
       { openAgent: vi.fn() },
     );
@@ -76,24 +91,36 @@ describe("SubagentStatusStrip", () => {
     }
   });
 
-  it("keeps selection by identifier across updates and opens the selected agent", () => {
+  it("keeps selection by identifier across live updates and opens the selected agent", () => {
     const openAgent = vi.fn();
     const strip = new SubagentStatusStrip(
-      [record("one", "running"), record("two", "queued"), record("three", "completed")],
+      [record("one", "running"), record("two", "queued"), record("three", "starting")],
       theme,
       { openAgent },
     );
     strip.selectNext();
     expect(strip.selectedId).toBe("two");
 
-    strip.setRecords([record("zero", "queued"), record("two", "running"), record("three", "completed")]);
+    strip.setRecords([record("zero", "queued"), record("two", "running"), record("three", "starting")]);
     expect(strip.selectedId).toBe("two");
     strip.openSelected();
     expect(openAgent).toHaveBeenCalledWith("two");
+  });
 
-    strip.setRecords([record("zero", "queued"), record("three", "completed")]);
+  it("drops an agent the moment it becomes terminal and moves selection to the nearest live agent", () => {
+    const strip = new SubagentStatusStrip(
+      [record("one", "running"), record("two", "running"), record("three", "running")],
+      theme,
+      { openAgent: vi.fn() },
+    );
+    strip.setFocused(true);
+    strip.selectNext();
+    expect(strip.selectedId).toBe("two");
+
+    strip.setRecords([record("one", "running"), record("two", "completed"), record("three", "running")]);
+
+    const text = strip.render(120).map(stripTerminalSequences).join("\n");
+    expect(text).not.toContain("two");
     expect(strip.selectedId).toBe("three");
-    strip.selectPrevious();
-    expect(strip.selectedId).toBe("zero");
   });
 });
