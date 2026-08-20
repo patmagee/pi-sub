@@ -88,6 +88,13 @@ describe("ProcessRunner", () => {
     expect(malformed.snapshot.diagnostics).toContain("Malformed Pi JSON event: not-json");
   });
 
+  it("treats an exit-zero provider error as a failure", async () => {
+    const result = await startBehavior("provider-error").completion;
+    expect(result.status).toBe("failed");
+    expect(result.exitCode).toBe(0);
+    expect(result.snapshot.terminalError).toContain("provider denied the request");
+  });
+
   it("cancels gracefully with SIGTERM", async () => {
     const handle = startBehavior("slow", { cancelGraceMs: 200 });
     await vi.waitFor(() => expect(handle.latestSnapshot.activity.length).toBeGreaterThan(0));

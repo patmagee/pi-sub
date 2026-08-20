@@ -167,14 +167,22 @@ class OwnedProcessHandle implements ProcessHandle {
       this.readStderr(Buffer.from(`Prompt cleanup failed: ${String(error)}\n`, "utf8"));
     }
 
+    const snapshot = this.reducer.snapshot();
+    const status: ProcessResult["status"] = this.cancelling
+      ? "cancelled"
+      : snapshot.terminalError !== undefined
+        ? "failed"
+        : code === 0
+          ? "completed"
+          : "failed";
     const result: ProcessResult = {
-      status: this.cancelling ? "cancelled" : code === 0 ? "completed" : "failed",
+      status,
       exitCode: code,
       signal,
       forced: this.forced,
       stderr: Buffer.concat(this.stderrChunks).toString("utf8"),
       stderrTruncated: this.stderrTruncated,
-      snapshot: this.reducer.snapshot(),
+      snapshot,
     };
     safeCallback(() => this.callbacks.onComplete?.(result));
     this.resolveCompletion(result);

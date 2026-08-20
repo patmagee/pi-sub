@@ -44,6 +44,18 @@ if (behavior === "complete") {
 } else if (behavior === "crash") {
   process.stderr.write("fake crash\n" + "x".repeat(70 * 1024));
   process.exitCode = 2;
+} else if (behavior === "provider-error") {
+  emit({ type: "session", id: "fake-session", sessionFile: "/tmp/fake-child.jsonl" });
+  emit({
+    type: "message_end",
+    message: {
+      role: "assistant",
+      content: [],
+      stopReason: "error",
+      errorMessage: "provider denied the request",
+    },
+  });
+  process.exitCode = 0;
 } else if (behavior === "malformed") {
   process.stdout.write("not-json\n");
   complete();

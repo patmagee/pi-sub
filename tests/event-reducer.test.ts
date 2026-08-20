@@ -69,6 +69,25 @@ describe("PiEventReducer", () => {
     expect(snapshot.sessionFile).toBe("/sessions/child.jsonl");
   });
 
+  it("classifies an exit-zero assistant error as a terminal failure", () => {
+    const reducer = new PiEventReducer();
+    reducer.pushLine(
+      JSON.stringify({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [],
+          stopReason: "error",
+          errorMessage: "provider denied the request",
+        },
+      }),
+    );
+
+    const snapshot = reducer.snapshot();
+    expect(snapshot.terminalError).toBe("provider denied the request");
+    expect(snapshot.finalSummary).toBeUndefined();
+  });
+
   it("bounds previews and retained activity", () => {
     const reducer = new PiEventReducer();
     for (let index = 0; index < 510; index += 1) {

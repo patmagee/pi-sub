@@ -10,6 +10,7 @@ export interface PiEventReducerSnapshot {
   usage: UsageTotals;
   finalSummary?: string;
   sessionFile?: string;
+  terminalError?: string;
   reasoningEmitted: boolean;
   reasoningState: string;
 }
@@ -56,6 +57,7 @@ export class PiEventReducer {
   };
   private finalSummary?: string;
   private sessionFile?: string;
+  private terminalError?: string;
   private reasoningEmitted = false;
 
   pushLine(line: string): void {
@@ -87,6 +89,7 @@ export class PiEventReducer {
     };
     if (this.finalSummary !== undefined) snapshot.finalSummary = this.finalSummary;
     if (this.sessionFile !== undefined) snapshot.sessionFile = this.sessionFile;
+    if (this.terminalError !== undefined) snapshot.terminalError = this.terminalError;
     return snapshot;
   }
 
@@ -129,6 +132,15 @@ export class PiEventReducer {
     if (event.type !== "message_end") return;
     const message = record(event.message);
     if (!message || message.role !== "assistant") return;
+
+    if (message.stopReason === "error") {
+      const errorText =
+        typeof message.errorMessage === "string" && message.errorMessage.length > 0
+          ? message.errorMessage
+          : "Provider reported an error without a message.";
+      this.terminalError = boundedPreview(errorText);
+      this.addDiagnostic(`Provider error: ${errorText}`);
+    }
 
     const text = assistantText(message);
     if (text) {
