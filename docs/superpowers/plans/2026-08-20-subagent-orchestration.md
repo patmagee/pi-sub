@@ -641,7 +641,126 @@ Stage only the files in this task. Proposed message: `feat: add visible subagent
 
 ---
 
-### Task 9: nono smoke test, real-Pi integration, and documentation
+### Task 9: Close integration and lifecycle gaps
+
+**Files:**
+- Modify: `index.ts`
+- Modify: `src/config.ts`
+- Modify: `src/event-reducer.ts`
+- Modify: `src/manager.ts`
+- Modify: `src/pi-command.ts`
+- Modify: `src/process-runner.ts`
+- Modify: `src/protocol.ts`
+- Modify: `src/registry.ts`
+- Modify: `src/socket-server.ts`
+- Modify: `src/tools.ts`
+- Modify: `src/tui/status-strip.ts`
+- Modify: `src/types.ts`
+- Modify: `README.md`
+- Modify: focused tests under `tests/`
+
+**Interfaces:**
+- Consumes: The complete extension package and Pi 0.84.2 JSON events, session manager API, and extension lifecycle.
+- Produces: Truthful terminal states, recursive parent delivery, inspectable session paths, agent-bound socket authentication, bounded terminal retention, and a live-only status strip.
+
+#### 9.1 Classify exit-zero assistant errors as failures
+
+- [ ] Add a failing reducer test in `tests/event-reducer.test.ts` for a `message_end` event whose assistant message has `stopReason: "error"`, `errorMessage: "provider denied the request"`, and no text. Assert that the snapshot retains the exact provider error.
+- [ ] Add a failing runner test in `tests/process-runner.test.ts` where the fake Pi emits that assistant error and exits with code zero. Assert that `ProcessResult.status` is `failed` and `stderr` or the retained terminal reason contains `provider denied the request`.
+- [ ] Extend `PiEventReducerSnapshot` with a bounded terminal provider error. Read `message.stopReason` and `message.errorMessage` from the authoritative `message_end.message` object.
+- [ ] Make `OwnedProcessHandle` prefer cancellation state first, then reducer terminal errors, then the operating-system exit code when selecting `ProcessResult.status`.
+- [ ] Run `npm test -- tests/event-reducer.test.ts tests/process-runner.test.ts` and `npm run typecheck`. Expected result: all focused tests pass and TypeScript reports no errors.
+- [ ] Commit this functional unit after approval with `fix: report provider failures from child sessions`.
+
+#### 9.2 Expose the agent identifier in visible start receipts
+
+- [ ] Change the existing start-tool test in `tests/tools.test.ts` to require `agent-1` in `result.content[0].text`, not only in `result.details`.
+- [ ] Run `npm test -- tests/tools.test.ts`. Expected result: failure because visible output omits the identifier.
+- [ ] Update `registerSubagentTools()` so the compact result includes `id=<receipt.id>` alongside name, status, and depth.
+- [ ] Run `npm test -- tests/tools.test.ts` and `npm run typecheck`. Expected result: pass.
+- [ ] Commit this functional unit after approval with `fix: expose inspectable subagent identifiers`.
+
+#### 9.3 Deliver descendant messages into the direct parent context
+
+- [ ] Add a failing child-runtime lifecycle test in `tests/extension-lifecycle.test.ts`. Deliver an unsolicited `parent_message` through a fake `RootSocketClient`, then assert that the child runtime calls `sendMessage()` with `deliverAs: "steer"` for updates and `deliverAs: "followUp"` for terminal messages.
+- [ ] Refactor `createChildRuntime()` dependency construction only as far as needed to inject a fake socket client without replacing the entire child runtime.
+- [ ] Subscribe once through `RootSocketClient.subscribeParentMessages()` after the child connects. Route each message through `sendParentDelivery()`, preserving `childId`, `kind`, text, and optional session path.
+- [ ] Dispose the parent-message subscription before closing the socket during child session shutdown.
+- [ ] Run `npm test -- tests/extension-lifecycle.test.ts tests/socket.test.ts` and `npm run typecheck`. Expected result: pass with no duplicate delivery after shutdown.
+- [ ] Commit this functional unit after approval with `fix: deliver recursive subagent updates to parents`.
+
+#### 9.4 Obtain child session paths through Pi's supported session API
+
+- [ ] Add a `session_ready` control message to `src/protocol.ts` with the bound `agentId` and `sessionFile`. Add validation tests that reject missing, empty, oversized, or mismatched fields.
+- [ ] Add a failing lifecycle test proving that child startup sends `ctx.sessionManager.getSessionFile()` to the root after socket authentication.
+- [ ] Add a failing manager test proving that the root records the path only for the socket-bound agent and exposes it through `summary` and bounded `session` inspection.
+- [ ] Send `session_ready` from `createChildRuntime()` when `getSessionFile()` returns a path. Do not infer a path from Pi's JSON session header.
+- [ ] Route `session_ready` in `createRootRuntime()` to a dedicated `SubagentManager.recordSessionFile(agentId, path)` method. Keep socket identity binding authoritative.
+- [ ] Remove `sessionFile` and `path` inference from `PiEventReducer` and update `tests/helpers/fake-pi.mjs` so fake JSON matches Pi's documented session header.
+- [ ] Run `npm test -- tests/protocol.test.ts tests/manager.test.ts tests/extension-lifecycle.test.ts tests/event-reducer.test.ts tests/process-runner.test.ts` and `npm run typecheck`. Expected result: pass.
+- [ ] Commit this functional unit after approval with `fix: register child session files through Pi context`.
+
+#### 9.5 Notify parents when queued launches fail
+
+- [ ] Add a failing manager test with one running agent and one queued agent whose later `prepareProcess()` call rejects. Assert that the queued agent becomes `failed` and its direct parent receives exactly one failed terminal delivery.
+- [ ] Separate immediate admission failures from asynchronous launch failures. The immediate `subagent_start` receipt remains authoritative, while failures after a queued receipt always call `deliverTerminal()`.
+- [ ] Guard terminal delivery with the existing `deliveredTerminal` set so cancellation and launch rejection cannot duplicate messages.
+- [ ] Run `npm test -- tests/manager.test.ts` and `npm run typecheck`. Expected result: pass.
+- [ ] Commit this functional unit after approval with `fix: deliver queued launch failures`.
+
+#### 9.6 Bind socket credentials to one agent identity
+
+- [ ] Replace the shared-token socket test with failing tests for three cases: the issued agent authenticates, a sibling cannot reuse that credential, and a child cannot authenticate as its parent.
+- [ ] Add `RootSocketServer.issueCredential(agentId)` and `RootSocketServer.revokeCredential(agentId)`. Generate independent random credentials and compare them with `timingSafeEqual` only after validating equal byte length.
+- [ ] Remove the public shared `server.token`. In `prepareProcess()`, issue the credential for `record.id` and pass only that value as `PI_SUB_ROOT_TOKEN`.
+- [ ] Revoke credentials after terminal completion, cancellation, failed launch, and shutdown. Keep the owner-only socket directory and socket permissions.
+- [ ] Add a process-command test proving each child environment contains only its own agent identifier and credential.
+- [ ] Run `npm test -- tests/socket.test.ts tests/pi-command.test.ts tests/manager.test.ts` and `npm run typecheck`. Expected result: pass.
+- [ ] Commit this security unit after adversarial review and human approval with `fix: bind control credentials to agent identities`.
+
+#### 9.7 Show only live agents in the status strip
+
+- [ ] Change `tests/tui/status-strip.test.ts` so queued, starting, and running agents appear, while completed, failed, and cancelled agents do not. Keep `/subagents` dashboard tests requiring terminal records for inspection.
+- [ ] Add a transition test that selects a running agent, marks it completed, and asserts that it disappears immediately while selection moves to the nearest remaining live identifier.
+- [ ] Filter terminal records inside `SubagentStatusStrip.setRecords()` and the constructor. Do not filter manager subscriptions or dashboard records.
+- [ ] Render the empty live-state message when every retained agent is terminal.
+- [ ] Run `npm test -- tests/tui/status-strip.test.ts tests/tui/dashboard.test.ts tests/extension-lifecycle.test.ts` and `npm run typecheck`. Expected result: pass.
+- [ ] Commit this functional unit after approval with `fix: remove terminal agents from status strip`.
+
+#### 9.8 Make the child context boundary explicit
+
+The original design intentionally gives children the assigned working directory and normal Pi governing resource discovery. Do not silently change that contract while fixing prompt isolation.
+
+- [ ] Amend `docs/superpowers/specs/2026-08-20-subagent-orchestration-design.md` and `README.md` to distinguish prompt isolation from process isolation. State that raw parent conversation history is excluded, while normal user and trusted-project instructions, skills, extensions, and context files may load.
+- [ ] Add an opt-in real-Pi assertion in `tests/integration/real-pi.test.ts` with three sentinels: the explicit context-summary sentinel appears, the raw parent-transcript sentinel does not, and a trusted project-instruction sentinel does appear.
+- [ ] Add a deterministic `buildPiArgs()` test proving stale inherited `PI_SUB_ROOT_SOCKET`, `PI_SUB_ROOT_TOKEN`, `PI_SUB_AGENT_ID`, `PI_SUB_PARENT_ID`, `PI_SUB_DEPTH`, and `PI_SUB_ROOT_SESSION_ID` values are replaced for each child rather than leaking from its parent environment.
+- [ ] Do not add `--no-context-files` or disable normal resource discovery unless a later approved design explicitly replaces the governing-context contract.
+- [ ] Run `npm test -- tests/pi-command.test.ts tests/prompt.test.ts` and `npm run typecheck`. Expected result: pass. Leave the real-Pi assertion skipped without opt-in.
+- [ ] Commit this contract unit after approval with `docs: clarify subagent context boundaries`.
+
+#### 9.9 Bound retained terminal records
+
+- [ ] Add `PI_SUB_MAX_RETAINED` with a default of `100`. Parse it as a positive integer and document it in `README.md`.
+- [ ] Add failing config tests for the default, valid override, and invalid fallback diagnostic.
+- [ ] Add failing registry tests that complete more than the configured retained limit. Assert that the oldest eligible terminal records are pruned, live records are never pruned, and terminal ancestors of live descendants remain until those descendants become terminal.
+- [ ] Add `AgentRegistry.pruneTerminalRecords()` and call it after every terminal transition. Preserve deep-copy boundaries and stable insertion order for surviving records.
+- [ ] Add a TUI subscription test proving pruned identifiers disappear from the dashboard without disturbing selection when the selected identifier survives.
+- [ ] Run `npm test -- tests/config.test.ts tests/registry.test.ts tests/manager.test.ts tests/tui/dashboard.test.ts` and `npm run typecheck`. Expected result: pass.
+- [ ] Commit this functional unit after approval with `feat: bound retained subagent records`.
+
+#### 9.10 Add deterministic integration-contract coverage
+
+- [ ] Add a root-to-child socket integration test that uses the real `RootSocketServer`, `RootSocketClient`, `SubagentManager`, and fake Pi process together. Cover dispatch, child update, grandchild update, terminal delivery, inspection, and shutdown without replacing runtime factories.
+- [ ] Add an exit-zero provider-error scenario to `tests/helpers/fake-pi.mjs` using Pi's documented `message_end.message` shape.
+- [ ] Assert that shutdown leaves no fake child process alive, removes the socket directory, revokes credentials, and resolves every pending request.
+- [ ] Assert that all inspection and tool output caps report truncation rather than silently returning apparently complete data.
+- [ ] Run `npm test` and `npm run typecheck`. Expected result: every deterministic test passes and TypeScript reports no errors.
+- [ ] Request adversarial review of process ownership, socket identity, failure classification, context boundaries, and cleanup before Task 10.
+- [ ] Commit this functional unit after approval with `test: cover recursive subagent integration contracts`.
+
+---
+
+### Task 10: nono smoke test, real-Pi integration, and documentation
 
 **Files:**
 - Create: `scripts/socket-smoke.mjs`
@@ -671,21 +790,25 @@ Record the exact denied path and operation. Do not edit active nono profiles.
 
 Guard the suite with `PI_SUB_REAL_INTEGRATION=1`. Start the extension through the local Pi executable with a temporary working directory and controlled role file. Verify:
 
-- The child session file exists.
+- The visible start receipt includes the agent identifier.
+- The child reports its actual session file through `ctx.sessionManager.getSessionFile()`, and bounded session inspection reads that file.
 - Read-only mode lacks `bash`, `edit`, and `write`.
-- A context-summary sentinel appears while a parent-transcript sentinel does not.
+- A context-summary sentinel appears while a parent-transcript sentinel does not and a trusted project-instruction sentinel does appear.
+- A grandchild's promoted update and terminal summary enter only its direct parent's context.
 - A depth-three child cannot delegate.
+- A failed provider message cannot become a completed record with an empty summary.
+- Completed, failed, and cancelled agents leave the status strip but remain in `/subagents` until retention pruning.
 - Closing the root leaves no child PID alive.
 
 Use a configured low-cost model from `PI_SUB_TEST_MODEL`. Fail with a clear prerequisite message when the opt-in variable is set but the model variable is absent.
 
 Run `npm test -- tests/integration/real-pi.test.ts` without opt-in. Expected result: skipped.
 
-- [ ] **Step 3: Replace the minimal README with operating documentation**
+- [ ] **Step 3: Update the operating documentation**
 
 Document:
 
-- Local installation with `pi install ./path/to/pi-sub` and temporary use with `pi -e .`.
+- SSH installation with `pi install git:git@github.com:patmagee/pi-sub` and temporary use with `pi -e git:git@github.com:patmagee/pi-sub`.
 - The four tools and asynchronous completion behavior.
 - Permission and context modes.
 - Built-in and custom role locations.
