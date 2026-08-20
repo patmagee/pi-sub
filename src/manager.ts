@@ -333,7 +333,7 @@ export class SubagentManager {
     };
   }
 
-  private async launchRecord(id: string): Promise<string | undefined> {
+  private async launchRecord(id: string, deliverOnFailure = false): Promise<string | undefined> {
     const launch = this.pending.get(id);
     const record = this.registry.get(id);
     if (!launch || !record) return "Agent launch state is unavailable.";
@@ -369,6 +369,10 @@ export class SubagentManager {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.failAdmission(id, message);
+      if (deliverOnFailure) {
+        const failed = this.registry.get(id);
+        if (failed) this.deliverTerminal(failed);
+      }
       void this.scheduleNext();
       return message;
     }
@@ -435,7 +439,7 @@ export class SubagentManager {
         if (!next) return;
         this.registry.transition(next.id, "starting");
         this.notify();
-        await this.launchRecord(next.id);
+        await this.launchRecord(next.id, true);
       }
     } finally {
       this.scheduling = false;

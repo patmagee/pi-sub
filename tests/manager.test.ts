@@ -110,8 +110,9 @@ function manager(options: {
   roles?: RoleDefinition[];
   availableModels?: string[];
   runner?: FakeRunner;
-  deliveries?: Array<{ parentId?: string; kind: string; text: string }>;
+  deliveries?: Array<{ parentId?: string; kind: string; text: string; childId?: string }>;
   socket?: { close: () => Promise<void> };
+  prepareProcess?: (record: import("../src/types.js").AgentRecord) => Promise<ProcessRunnerInput>;
 } = {}) {
   const runner = options.runner ?? new FakeRunner();
   const deliveries = options.deliveries ?? [];
@@ -121,16 +122,23 @@ function manager(options: {
     roles: new Map((options.roles ?? [role()]).map((entry) => [entry.name, entry])),
     processRunner: runner,
     modelAvailable: (model) => (options.availableModels ?? ["anthropic/parent", "anthropic/role", "openai/override"]).includes(model),
-    prepareProcess: async (record) => ({
-      command: process.execPath,
-      args: [],
-      cwd: record.cwd,
-      env: { ...process.env, FAKE_AGENT_ID: record.id },
-      cancelGraceMs: 10,
-      cleanup: async () => {},
-    }),
+    prepareProcess:
+      options.prepareProcess ??
+      (async (record) => ({
+        command: process.execPath,
+        args: [],
+        cwd: record.cwd,
+        env: { ...process.env, FAKE_AGENT_ID: record.id },
+        cancelGraceMs: 10,
+        cleanup: async () => {},
+      })),
     deliverToParent: (parentId, message) => {
-      deliveries.push({ ...(parentId ? { parentId } : {}), kind: message.kind, text: message.text });
+      deliveries.push({
+        ...(parentId ? { parentId } : {}),
+        kind: message.kind,
+        text: message.text,
+        childId: message.childId,
+      });
     },
     controlServer: socket,
   });
@@ -175,6 +183,39 @@ describe("SubagentManager admission", () => {
     );
   });
 
+  it("marks a queued agent failed and notifies its parent exactly once when its launch rejects", async () => {
+    let calls = 0;
+    const { instance, runner, deliveries } = manager({
+      config: config({ maxConcurrency: 1 }),
+      prepareProcess: async (record) => {
+        calls += 1;
+        if (calls >= 2) throw new Error("prepare failed");
+        return {
+          command: process.execPath,
+          args: [],
+          cwd: record.cwd,
+          env: { ...process.env, FAKE_AGENT_ID: record.id },
+          cancelGraceMs: 10,
+          cleanup: async () => {},
+        };
+      },
+    });
+    const first = await instance.start({ name: "first", role: "scout", task: "one" }, rootContext);
+    const second = await instance.start({ name: "second", role: "scout", task: "two" }, rootContext);
+    expect(second.status).toBe("queued");
+
+    runner.finish(first.id);
+
+    await vi.waitFor(async () => {
+      const record = await instance.inspect({ targetId: second.id, view: "metadata" });
+      expect(record.content).toMatchObject({ status: "failed" });
+    });
+    const failedForSecond = deliveries.filter(
+      (delivery) => delivery.kind === "failed" && delivery.childId === second.id,
+    );
+    expect(failedForSecond).toHaveLength(1);
+  });
+
   it("records an unavailable requested model as a visible failure without launching", async () => {
     const { instance, runner } = manager();
     const receipt = await instance.start(
@@ -210,7 +251,9 @@ describe("SubagentManager routing", () => {
 
     instance.recordUpdate({ agentId: child.id, text: "dashboard only", promote: false });
     instance.recordUpdate({ agentId: child.id, text: "tell parent", promote: true });
-    expect(deliveries).toEqual([{ parentId: parent.id, kind: "update", text: "tell parent" }]);
+    expect(deliveries).toEqual([
+      { parentId: parent.id, kind: "update", text: "tell parent", childId: child.id },
+    ]);
     expect((await instance.inspect({ requesterId: parent.id, targetId: child.id, view: "updates" })).content).toHaveLength(2);
   });
 
