@@ -1,4 +1,9 @@
 import { readFile } from "node:fs/promises";
+import {
+  resolveModelIdentifier,
+  resolveRoleName,
+  type DispatchCatalog,
+} from "./dispatch-catalog.js";
 import { buildChildPrompt } from "./prompt.js";
 import { READ_ONLY_TOOLS } from "./pi-command.js";
 import type {
@@ -58,7 +63,7 @@ export interface ManagerOptions {
   processRunner: {
     start(input: ProcessRunnerInput, callbacks: ProcessRunnerCallbacks): ProcessHandle;
   };
-  modelAvailable: (model: string) => boolean;
+  catalog: DispatchCatalog;
   prepareProcess: (
     record: AgentRecord,
     prompt: string,
@@ -127,14 +132,31 @@ export class SubagentManager {
   async start(input: StartInput, parentContext: ParentContext): Promise<StartReceipt> {
     if (this.shuttingDown) throw new Error("Subagent manager is shutting down.");
 
-    const role = this.options.roles.get(input.role);
-    const permission = input.permission ?? role?.defaultPermission ?? "read-only";
-    const effectiveModel = input.model ?? role?.defaultModel ?? parentContext.model;
-    const effectiveEffort = input.effort ?? role?.defaultEffort ?? parentContext.effort;
+    const roleName = resolveRoleName(input.role, this.options.catalog);
+    const role = this.options.roles.get(roleName);
+    if (!role) throw new Error(`Resolved role is unavailable: ${roleName}.`);
+
+    const resolvedRequestedModel = input.model
+      ? resolveModelIdentifier(input.model, this.options.catalog)
+      : undefined;
+    if (
+      resolvedRequestedModel === undefined &&
+      role.defaultModel !== undefined &&
+      !this.options.catalog.models.includes(role.defaultModel)
+    ) {
+      const available = this.options.catalog.models.join(", ") || "none";
+      throw new Error(
+        `Role "${roleName}" requests unavailable model "${role.defaultModel}". Available models: ${available}.`,
+      );
+    }
+
+    const permission = input.permission ?? role.defaultPermission ?? "read-only";
+    const effectiveModel = resolvedRequestedModel ?? role.defaultModel ?? parentContext.model;
+    const effectiveEffort = input.effort ?? role.defaultEffort ?? parentContext.effort;
     const record = this.registry.admit({
       name: input.name,
       ...(parentContext.agentId ? { parentId: parentContext.agentId } : {}),
-      role: input.role,
+      role: roleName,
       task: input.task,
       ...(input.contextSummary !== undefined ? { contextSummary: input.contextSummary } : {}),
       permission,
@@ -148,13 +170,6 @@ export class SubagentManager {
     if (effectiveEffort !== undefined) resolution.effectiveEffort = effectiveEffort;
     this.registry.patch(record.id, resolution);
     this.contexts.set(record.id, this.childContext(record.id, parentContext));
-
-    if (!role) {
-      return this.failAdmission(record.id, `Unknown subagent role "${input.role}".`);
-    }
-    if (effectiveModel && !this.options.modelAvailable(effectiveModel)) {
-      return this.failAdmission(record.id, `Requested model "${effectiveModel}" is unavailable.`);
-    }
 
     const prompt = buildChildPrompt({
       name: record.displayName,

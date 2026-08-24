@@ -8,6 +8,10 @@ import type {
 import { Text } from "@earendil-works/pi-tui";
 import { parseConfig } from "./src/config.js";
 import {
+  buildDispatchCatalog,
+  type DispatchCatalog,
+} from "./src/dispatch-catalog.js";
+import {
   type ParentDelivery,
   type ParentContext,
   SubagentManager,
@@ -31,6 +35,7 @@ const extensionPath = fileURLToPath(import.meta.url);
 
 export interface SessionRuntime {
   controller: SubagentToolController;
+  catalog: DispatchCatalog;
   shutdown(reason: string): Promise<void>;
   diagnostics: string[];
   subscribe?(listener: (records: AgentRecord[]) => void): () => void;
@@ -93,6 +98,11 @@ async function createRootRuntime(input: RuntimeFactoryInput): Promise<SessionRun
     cwd: input.ctx.cwd,
     projectTrusted: input.projectTrusted,
   });
+  const catalog = buildDispatchCatalog({
+    roles: discovered.roles,
+    scopedModels: input.ctx.scopedModels.map((entry) => entry.model),
+    availableModels: input.ctx.modelRegistry.getAvailable(),
+  });
 
   let manager: SubagentManager;
   const server = await RootSocketServer.start({
@@ -106,6 +116,9 @@ async function createRootRuntime(input: RuntimeFactoryInput): Promise<SessionRun
       }
     },
     onMessage: async (message, boundAgentId): Promise<ControlMessage | undefined> => {
+      if (message.type === "catalog") {
+        return { v: 1, type: "catalog_result", requestId: message.requestId, catalog };
+      }
       if (message.type === "dispatch") {
         try {
           const receipt = await manager.start(message.input, manager.contextFor(boundAgentId));
@@ -175,11 +188,8 @@ async function createRootRuntime(input: RuntimeFactoryInput): Promise<SessionRun
   manager = new SubagentManager({
     config: parsed.config,
     roles: discovered.roles,
+    catalog,
     processRunner: runner,
-    modelAvailable: (requested) =>
-      input.ctx.modelRegistry
-        .getAvailable()
-        .some((model) => `${model.provider}/${model.id}` === requested),
     prepareProcess: async (record, prompt, parentContext) => {
       const built = await buildPiArgs({
         prompt,
@@ -235,6 +245,7 @@ async function createRootRuntime(input: RuntimeFactoryInput): Promise<SessionRun
   };
   return {
     controller,
+    catalog,
     diagnostics: [...parsed.diagnostics, ...discovered.diagnostics],
     subscribe: (listener) => manager.subscribe(listener),
     shutdown: (reason) => manager.shutdown(reason),
@@ -257,6 +268,18 @@ export async function createChildRuntime(
   const token = requiredEnvironment(input.environment, "PI_SUB_ROOT_TOKEN");
   const agentId = requiredEnvironment(input.environment, "PI_SUB_AGENT_ID");
   const client = await childDependencies.connect({ socketPath, token, agentId });
+  const catalogRequestId = randomUUID();
+  const catalogResponse = await client.request({
+    v: 1,
+    type: "catalog",
+    requestId: catalogRequestId,
+    requesterId: agentId,
+  });
+  if (catalogResponse.type !== "catalog_result") throw new Error("Unexpected catalogue response.");
+  if (catalogResponse.error) throw new Error(catalogResponse.error);
+  if (!catalogResponse.catalog) throw new Error("Catalogue response did not contain a catalogue.");
+  const catalog = catalogResponse.catalog;
+
   const unsubscribeParentMessages = client.subscribeParentMessages((message) => {
     sendParentDelivery(input.pi, {
       childId: message.childId,
@@ -335,6 +358,7 @@ export async function createChildRuntime(
 
   return {
     controller,
+    catalog,
     diagnostics: [],
     shutdown: async () => {
       unsubscribeParentMessages();

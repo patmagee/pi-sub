@@ -5,10 +5,13 @@ import {
   type ControlMessage,
 } from "./protocol.js";
 
-type RequestMessage = Extract<ControlMessage, { type: "dispatch" | "inspect" | "cancel" }>;
+type RequestMessage = Extract<
+  ControlMessage,
+  { type: "catalog" | "dispatch" | "inspect" | "cancel" }
+>;
 type ResponseMessage = Extract<
   ControlMessage,
-  { type: "dispatch_result" | "inspect_result" | "cancel_result" }
+  { type: "catalog_result" | "dispatch_result" | "inspect_result" | "cancel_result" }
 >;
 type UpdateMessage = Extract<ControlMessage, { type: "update" | "session_ready" }>;
 type ParentMessage = Extract<ControlMessage, { type: "parent_message" }>;
@@ -122,6 +125,7 @@ export class RootSocketClient {
         continue;
       }
       if (
+        message.type === "catalog_result" ||
         message.type === "dispatch_result" ||
         message.type === "inspect_result" ||
         message.type === "cancel_result"

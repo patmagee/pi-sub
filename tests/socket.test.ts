@@ -34,6 +34,17 @@ describe("root socket server and client", () => {
         disconnected = true;
       },
       onMessage: async (message) => {
+        if (message.type === "catalog") {
+          return {
+            v: 1,
+            type: "catalog_result",
+            requestId: message.requestId,
+            catalog: {
+              roles: [{ name: "generic", description: "General work", source: "bundled" }],
+              models: ["anthropic/claude-opus-4-8"],
+            },
+          };
+        }
         if (message.type === "dispatch") {
           return {
             v: 1,
@@ -67,6 +78,17 @@ describe("root socket server and client", () => {
       agentId: "agent-1",
     });
 
+    await expect(
+      client.request({
+        v: 1,
+        type: "catalog",
+        requestId: "catalog-1",
+        requesterId: "agent-1",
+      }),
+    ).resolves.toMatchObject({
+      type: "catalog_result",
+      catalog: { models: ["anthropic/claude-opus-4-8"] },
+    });
     await expect(
       client.request({
         v: 1,
@@ -220,6 +242,34 @@ describe("root socket server and client", () => {
       }),
     ).rejects.toThrow("Root control socket closed.");
 
+    await server.close();
+  });
+
+  it("rejects catalogue identity spoofing across bound connections", async () => {
+    const server = await RootSocketServer.start({
+      socketParentDir: await socketParent(),
+      authenticateAgent: (agentId) => agentId === "agent-1",
+      onMessage: async () => undefined,
+    });
+
+    const client = await RootSocketClient.connect({
+      socketPath: server.socketPath,
+      token: server.issueCredential("agent-1"),
+      agentId: "agent-1",
+    });
+    await expect(
+      client.request({
+        v: 1,
+        type: "catalog",
+        requestId: "catalog-spoof",
+        requesterId: "agent-2",
+      }),
+    ).resolves.toMatchObject({
+      type: "catalog_result",
+      error: "Control connection identity does not match requesterId.",
+    });
+
+    client.close();
     await server.close();
   });
 

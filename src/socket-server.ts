@@ -11,7 +11,7 @@ import {
 
 type ClientMessage = Extract<
   ControlMessage,
-  { type: "dispatch" | "update" | "session_ready" | "inspect" | "cancel" }
+  { type: "catalog" | "dispatch" | "update" | "session_ready" | "inspect" | "cancel" }
 >;
 type ParentMessage = Extract<ControlMessage, { type: "parent_message" }>;
 
@@ -34,6 +34,8 @@ interface ConnectionState {
 
 function responseError(message: ClientMessage, error: string): ControlMessage | undefined {
   switch (message.type) {
+    case "catalog":
+      return { v: 1, type: "catalog_result", requestId: message.requestId, error };
     case "dispatch":
       return { v: 1, type: "dispatch_result", requestId: message.requestId, error };
     case "inspect":
@@ -180,6 +182,7 @@ export class RootSocketServer {
     }
 
     if (
+      message.type !== "catalog" &&
       message.type !== "dispatch" &&
       message.type !== "update" &&
       message.type !== "session_ready" &&

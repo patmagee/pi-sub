@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildDispatchCatalog } from "../../src/dispatch-catalog.js";
 import {
   SubagentManager,
   type ParentContext,
@@ -77,6 +78,8 @@ async function harness(): Promise<Harness> {
   temporaryDirectories.push(socketParentDir);
   const rootDeliveries: ParentDelivery[] = [];
   const credentials = new Map<string, string>();
+  const roles = new Map([[scoutRole.name, scoutRole]]);
+  const catalog = buildDispatchCatalog({ roles, scopedModels: [], availableModels: [] });
 
   let manager: SubagentManager;
   const server = await RootSocketServer.start({
@@ -90,6 +93,9 @@ async function harness(): Promise<Harness> {
       }
     },
     onMessage: async (message, boundAgentId): Promise<ControlMessage | undefined> => {
+      if (message.type === "catalog") {
+        return { v: 1, type: "catalog_result", requestId: message.requestId, catalog };
+      }
       if (message.type === "dispatch") {
         try {
           const receipt = await manager.start(message.input, manager.contextFor(boundAgentId));
@@ -147,9 +153,9 @@ async function harness(): Promise<Harness> {
 
   manager = new SubagentManager({
     config: config(),
-    roles: new Map([[scoutRole.name, scoutRole]]),
+    roles,
+    catalog,
     processRunner: new ProcessRunner(),
-    modelAvailable: () => true,
     prepareProcess: async (record) => {
       const token = server.issueCredential(record.id);
       credentials.set(record.id, token);

@@ -6,7 +6,13 @@ import {
   type SessionRuntime,
   type SubagentExtensionDependencies,
 } from "../index.js";
+import type { DispatchCatalog } from "../src/dispatch-catalog.js";
 import type { SubagentToolController } from "../src/tools.js";
+
+const dispatchCatalog: DispatchCatalog = {
+  roles: [{ name: "generic", description: "General work", source: "bundled" }],
+  models: ["anthropic/parent"],
+};
 
 function controller(): SubagentToolController {
   return {
@@ -67,7 +73,11 @@ function context(trusted = true) {
     },
     model: { provider: "anthropic", id: "parent" },
     thinkingLevel: "medium",
-    modelRegistry: { find: vi.fn(() => ({})) },
+    scopedModels: [],
+    modelRegistry: {
+      find: vi.fn(() => ({})),
+      getAvailable: vi.fn(() => [{ provider: "anthropic", id: "parent" }]),
+    },
     sessionManager: {
       getSessionId: () => "root-session",
       getSessionFile: () => "/sessions/child-session.jsonl",
@@ -76,7 +86,12 @@ function context(trusted = true) {
 }
 
 function runtime(): SessionRuntime {
-  return { controller: controller(), shutdown: vi.fn(async () => {}), diagnostics: [] };
+  return {
+    controller: controller(),
+    catalog: dispatchCatalog,
+    shutdown: vi.fn(async () => {}),
+    diagnostics: [],
+  };
 }
 
 function dependencies(environment: NodeJS.ProcessEnv = {}): {
@@ -214,7 +229,12 @@ describe("child parent delivery", () => {
     const unsubscribe = vi.fn();
     const close = vi.fn();
     const fakeClient = {
-      request: vi.fn(),
+      request: vi.fn(async (message: any) => ({
+        v: 1,
+        type: "catalog_result",
+        requestId: message.requestId,
+        catalog: dispatchCatalog,
+      })),
       send: vi.fn(),
       subscribeParentMessages: vi.fn((listener: (message: any) => void) => {
         push = listener;
@@ -236,6 +256,10 @@ describe("child parent delivery", () => {
       { connect: async () => fakeClient as never },
     );
 
+    expect(fakeClient.request).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "catalog", requesterId: "agent-1" }),
+    );
+    expect(session.catalog).toEqual(dispatchCatalog);
     expect(fakeClient.subscribeParentMessages).toHaveBeenCalledTimes(1);
     expect(fakeClient.send).toHaveBeenCalledWith({
       v: 1,

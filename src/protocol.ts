@@ -1,3 +1,4 @@
+import type { DispatchCatalog } from "./dispatch-catalog.js";
 import type { PermissionMode, ThinkingLevel } from "./types.js";
 
 export const MAX_FRAME_BYTES = 256 * 1024;
@@ -35,6 +36,8 @@ export interface InspectResult {
 
 export type ControlMessage =
   | { v: 1; type: "hello"; token: string; agentId: string }
+  | { v: 1; type: "catalog"; requestId: string; requesterId: string }
+  | { v: 1; type: "catalog_result"; requestId: string; catalog?: DispatchCatalog; error?: string }
   | { v: 1; type: "dispatch"; requestId: string; parentId: string; input: StartInput }
   | { v: 1; type: "dispatch_result"; requestId: string; receipt?: StartReceipt; error?: string }
   | { v: 1; type: "update"; agentId: string; text: string; promote: boolean }
@@ -75,6 +78,8 @@ export class ProtocolError extends Error {
 
 const MESSAGE_TYPES = new Set([
   "hello",
+  "catalog",
+  "catalog_result",
   "dispatch",
   "dispatch_result",
   "update",
@@ -157,6 +162,56 @@ function validateStartInput(value: unknown): void {
   }
 }
 
+function assertOnlyFields(
+  value: Record<string, unknown>,
+  allowed: ReadonlySet<string>,
+  label: string,
+): void {
+  for (const field of Object.keys(value)) {
+    if (!allowed.has(field)) throw new ProtocolError(`Unexpected ${label} field "${field}".`);
+  }
+}
+
+function validateDispatchCatalog(value: unknown): void {
+  const catalog = object(value);
+  assertOnlyFields(catalog, new Set(["roles", "models"]), "dispatch catalogue");
+  if (!Array.isArray(catalog.roles)) throw new ProtocolError("Dispatch catalogue roles must be an array.");
+  for (const value of catalog.roles) {
+    const role = object(value);
+    assertOnlyFields(
+      role,
+      new Set(["name", "description", "source", "defaultModel", "defaultEffort", "defaultPermission"]),
+      "dispatch role",
+    );
+    stringField(role, "name");
+    stringField(role, "description");
+    if (role.source !== "bundled" && role.source !== "user" && role.source !== "project") {
+      throw new ProtocolError("Invalid dispatch role source.");
+    }
+    optionalString(role, "defaultModel");
+    if (
+      role.defaultEffort !== undefined &&
+      (typeof role.defaultEffort !== "string" ||
+        !THINKING_LEVELS.has(role.defaultEffort as ThinkingLevel))
+    ) {
+      throw new ProtocolError("Invalid dispatch role thinking level.");
+    }
+    if (
+      role.defaultPermission !== undefined &&
+      role.defaultPermission !== "read-only" &&
+      role.defaultPermission !== "inherit"
+    ) {
+      throw new ProtocolError("Invalid dispatch role permission.");
+    }
+  }
+  if (
+    !Array.isArray(catalog.models) ||
+    catalog.models.some((model) => typeof model !== "string" || model.length === 0)
+  ) {
+    throw new ProtocolError("Dispatch model identifiers must be non-empty strings.");
+  }
+}
+
 function validateReceipt(value: unknown): void {
   const receipt = object(value);
   stringField(receipt, "id");
@@ -182,6 +237,18 @@ export function validateControlMessage(value: unknown): ControlMessage {
     case "hello":
       stringField(message, "token");
       stringField(message, "agentId");
+      break;
+    case "catalog":
+      requestFields(message);
+      stringField(message, "requesterId");
+      break;
+    case "catalog_result":
+      requestFields(message);
+      if (message.catalog !== undefined) validateDispatchCatalog(message.catalog);
+      optionalString(message, "error");
+      if (message.catalog === undefined && message.error === undefined) {
+        throw new ProtocolError("Catalogue result must include a catalogue or error.");
+      }
       break;
     case "dispatch":
       requestFields(message);

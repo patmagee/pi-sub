@@ -113,4 +113,69 @@ describe("socket framing", () => {
       }),
     ).toThrow("Inspection limit cannot exceed 51200 bytes.");
   });
+
+  it("validates dispatch catalogue requests and responses", () => {
+    expect(
+      encodeFrame({
+        v: 1,
+        type: "catalog",
+        requestId: "catalog-1",
+        requesterId: "agent-1",
+      }),
+    ).toBeInstanceOf(Buffer);
+    expect(
+      encodeFrame({
+        v: 1,
+        type: "catalog_result",
+        requestId: "catalog-1",
+        catalog: {
+          roles: [
+            {
+              name: "generic",
+              description: "General work",
+              source: "bundled",
+              defaultPermission: "read-only",
+            },
+          ],
+          models: ["anthropic/claude-opus-4-8"],
+        },
+      }),
+    ).toBeInstanceOf(Buffer);
+  });
+
+  it("rejects malformed dispatch catalogues", () => {
+    expect(() =>
+      new FrameDecoder().push(
+        Buffer.from(
+          '{"v":1,"type":"catalog_result","requestId":"catalog-1","catalog":{"roles":[{"name":"generic","description":"General","source":"unknown"}],"models":[]}}\n',
+        ),
+      ),
+    ).toThrow("Invalid dispatch role source.");
+    expect(() =>
+      new FrameDecoder().push(
+        Buffer.from(
+          '{"v":1,"type":"catalog_result","requestId":"catalog-1","catalog":{"roles":[],"models":[""]}}\n',
+        ),
+      ),
+    ).toThrow("Dispatch model identifiers must be non-empty strings.");
+    expect(() =>
+      new FrameDecoder().push(
+        Buffer.from(
+          '{"v":1,"type":"catalog_result","requestId":"catalog-1","catalog":{"roles":[{"name":"generic","description":"General","source":"bundled","filePath":"/private"}],"models":[]}}\n',
+        ),
+      ),
+    ).toThrow('Unexpected dispatch role field "filePath".');
+  });
+
+  it("accepts a dispatch input without a role", () => {
+    expect(
+      encodeFrame({
+        v: 1,
+        type: "dispatch",
+        requestId: "dispatch-1",
+        parentId: "agent-1",
+        input: { name: "child", task: "inspect" },
+      }),
+    ).toBeInstanceOf(Buffer);
+  });
 });

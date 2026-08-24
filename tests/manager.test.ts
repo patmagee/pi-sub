@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildDispatchCatalog } from "../src/dispatch-catalog.js";
 import { SubagentManager, type ParentContext } from "../src/manager.js";
 import type { PiEventReducerSnapshot } from "../src/event-reducer.js";
 import type { ProcessHandle, ProcessResult, ProcessRunnerCallbacks, ProcessRunnerInput } from "../src/process-runner.js";
@@ -117,11 +118,21 @@ function manager(options: {
   const runner = options.runner ?? new FakeRunner();
   const deliveries = options.deliveries ?? [];
   const socket: { close: () => Promise<void> } = options.socket ?? { close: vi.fn(async () => {}) };
+  const roleDefinitions = options.roles ?? [role({ name: "generic" }), role()];
+  const roles = new Map(roleDefinitions.map((entry) => [entry.name, entry]));
+  const availableModels = options.availableModels ?? ["anthropic/parent", "anthropic/role", "openai/override"];
   const instance = new SubagentManager({
     config: options.config ?? config(),
-    roles: new Map((options.roles ?? [role()]).map((entry) => [entry.name, entry])),
+    roles,
+    catalog: buildDispatchCatalog({
+      roles,
+      scopedModels: [],
+      availableModels: availableModels.map((model) => {
+        const separator = model.indexOf("/");
+        return { provider: model.slice(0, separator), id: model.slice(separator + 1) };
+      }),
+    }),
     processRunner: runner,
-    modelAvailable: (model) => (options.availableModels ?? ["anthropic/parent", "anthropic/role", "openai/override"]).includes(model),
     prepareProcess:
       options.prepareProcess ??
       (async (record) => ({
@@ -216,19 +227,57 @@ describe("SubagentManager admission", () => {
     expect(failedForSecond).toHaveLength(1);
   });
 
-  it("records an unavailable requested model as a visible failure without launching", async () => {
+  it("uses the generic role when role is omitted", async () => {
+    const { instance } = manager();
+    const receipt = await instance.start({ name: "generic", task: "inspect" }, rootContext);
+
+    expect(receipt.status).toBe("starting");
+    expect((await instance.inspect({ targetId: receipt.id, view: "metadata" })).content).toMatchObject({
+      role: "generic",
+      effectiveModel: "anthropic/parent",
+    });
+  });
+
+  it("rejects unknown roles before admission", async () => {
     const { instance, runner } = manager();
+
+    await expect(
+      instance.start({ name: "bad-role", role: "missing", task: "inspect" }, rootContext),
+    ).rejects.toThrow('Unknown subagent role "missing"');
     const receipt = await instance.start(
-      { name: "bad-model", role: "scout", task: "inspect", model: "missing/model" },
+      { name: "bad-role", role: "scout", task: "inspect" },
       rootContext,
     );
 
-    expect(receipt).toMatchObject({ status: "failed", error: 'Requested model "missing/model" is unavailable.' });
-    expect(runner.started).toEqual([]);
-    expect((await instance.inspect({ targetId: receipt.id, view: "metadata" })).content).toMatchObject({
-      status: "failed",
-      statusReason: 'Requested model "missing/model" is unavailable.',
+    expect(receipt.displayName).toBe("bad-role");
+    expect(runner.started).toEqual([receipt.id]);
+  });
+
+  it("rejects unavailable and ambiguous model selections before admission", async () => {
+    const { instance, runner } = manager({
+      availableModels: [
+        "anthropic/parent",
+        "anthropic/claude-opus-4-7",
+        "anthropic/claude-opus-4-8",
+      ],
     });
+
+    await expect(
+      instance.start({ name: "bad-model", role: "scout", task: "inspect", model: "missing" }, rootContext),
+    ).rejects.toThrow('Model "missing" is unavailable.');
+    await expect(
+      instance.start({ name: "ambiguous", role: "scout", task: "inspect", model: "opus" }, rootContext),
+    ).rejects.toThrow('Model shorthand "opus" is ambiguous');
+    const receipt = await instance.start(
+      { name: "unique", role: "scout", task: "inspect", model: "4-8" },
+      rootContext,
+    );
+
+    expect((await instance.inspect({ targetId: receipt.id, view: "metadata" })).content).toMatchObject({
+      requestedModel: "4-8",
+      effectiveModel: "anthropic/claude-opus-4-8",
+    });
+    expect(runner.started).toEqual([receipt.id]);
   });
 });
 
