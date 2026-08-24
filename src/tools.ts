@@ -124,7 +124,9 @@ export function registerSubagentTools(
       const receipt = await controller.start(params, signal);
       const modelText = "model" in params && params.model ? ` model=${params.model}` : "";
       const effortText = "effort" in params && params.effort ? ` effort=${params.effort}` : "";
-      const permission = params.permission ?? "read-only";
+      const roleName = params.role ?? "generic";
+      const rolePermission = catalog.roles.find((role) => role.name === roleName)?.defaultPermission;
+      const permission = params.permission ?? rolePermission ?? "read-only";
       return {
         content: [
           {

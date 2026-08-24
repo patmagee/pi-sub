@@ -13,7 +13,12 @@ import {
 const catalog: DispatchCatalog = {
   roles: [
     { name: "generic", description: "General work", source: "bundled" },
-    { name: "scout", description: "Search quickly", source: "bundled" },
+    {
+      name: "scout",
+      description: "Search quickly",
+      source: "bundled",
+      defaultPermission: "inherit",
+    },
   ],
   models: ["anthropic/claude-opus-4-8", "openai/gpt-5.4"],
 };
@@ -120,6 +125,7 @@ describe("registered subagent tools", () => {
     );
     expect(result.content[0].text).toContain("scout [starting]");
     expect(result.content[0].text).toContain("agent-1");
+    expect(result.content[0].text).toContain("permission=inherit");
     expect(result.details).toMatchObject({ id: "agent-1", depth: 1 });
   });
 

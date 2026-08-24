@@ -239,10 +239,20 @@ export function validateControlMessage(value: unknown): ControlMessage {
       stringField(message, "agentId");
       break;
     case "catalog":
+      assertOnlyFields(
+        message,
+        new Set(["v", "type", "requestId", "requesterId"]),
+        "catalog message",
+      );
       requestFields(message);
       stringField(message, "requesterId");
       break;
     case "catalog_result":
+      assertOnlyFields(
+        message,
+        new Set(["v", "type", "requestId", "catalog", "error"]),
+        "catalog result message",
+      );
       requestFields(message);
       if (message.catalog !== undefined) validateDispatchCatalog(message.catalog);
       optionalString(message, "error");

@@ -37,6 +37,12 @@ Choose a specialized role or an unambiguous model shorthand when useful:
 Use a scout subagent with the opus model to map the authentication flow.
 ```
 
+You can also provide the exact identifier shown in the tool schema:
+
+```text
+Use a reviewer subagent with model anthropic/claude-opus-4-8 to review the API contract.
+```
+
 The start call returns immediately. Pi receives promoted updates and a final summary as the subagent works.
 
 ## Contents

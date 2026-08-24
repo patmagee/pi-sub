@@ -143,6 +143,23 @@ describe("socket framing", () => {
     ).toBeInstanceOf(Buffer);
   });
 
+  it("rejects unexpected top-level dispatch catalogue message fields", () => {
+    expect(() =>
+      new FrameDecoder().push(
+        Buffer.from(
+          '{"v":1,"type":"catalog","requestId":"catalog-1","requesterId":"agent-1","extra":true}\n',
+        ),
+      ),
+    ).toThrow('Unexpected catalog message field "extra".');
+    expect(() =>
+      new FrameDecoder().push(
+        Buffer.from(
+          '{"v":1,"type":"catalog_result","requestId":"catalog-1","catalog":{"roles":[],"models":[]},"extra":true}\n',
+        ),
+      ),
+    ).toThrow('Unexpected catalog result message field "extra".');
+  });
+
   it("rejects malformed dispatch catalogues", () => {
     expect(() =>
       new FrameDecoder().push(
