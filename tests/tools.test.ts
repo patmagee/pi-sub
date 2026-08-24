@@ -1,13 +1,22 @@
 import { Value } from "typebox/value";
 import { describe, expect, it, vi } from "vitest";
+import type { DispatchCatalog } from "../src/dispatch-catalog.js";
 import type { InspectResult, StartReceipt } from "../src/protocol.js";
 import {
+  createSubagentStartSchema,
   registerSubagentTools,
   SubagentCancelSchema,
   SubagentInspectSchema,
-  SubagentStartSchema,
   type SubagentToolController,
 } from "../src/tools.js";
+
+const catalog: DispatchCatalog = {
+  roles: [
+    { name: "generic", description: "General work", source: "bundled" },
+    { name: "scout", description: "Search quickly", source: "bundled" },
+  ],
+  models: ["anthropic/claude-opus-4-8", "openai/gpt-5.4"],
+};
 
 function fakePi() {
   const tools = new Map<string, any>();
@@ -38,11 +47,14 @@ function controller(): SubagentToolController {
 }
 
 describe("subagent tool schemas", () => {
-  it("requires name, role, and task while accepting optional dispatch controls", () => {
-    expect(Value.Check(SubagentStartSchema, { name: "scan", role: "scout", task: "find auth" })).toBe(true);
-    expect(Value.Check(SubagentStartSchema, { name: "scan", role: "scout" })).toBe(false);
+  it("requires name and task while accepting an omitted or known role", () => {
+    const schema = createSubagentStartSchema(catalog);
+    expect(Value.Check(schema, { name: "scan", task: "find auth" })).toBe(true);
+    expect(Value.Check(schema, { name: "scan", role: "scout", task: "find auth" })).toBe(true);
+    expect(Value.Check(schema, { name: "scan", role: "missing", task: "find auth" })).toBe(false);
+    expect(Value.Check(schema, { name: "scan", role: "scout" })).toBe(false);
     expect(
-      Value.Check(SubagentStartSchema, {
+      Value.Check(schema, {
         name: "scan",
         role: "scout",
         task: "find auth",
@@ -53,6 +65,14 @@ describe("subagent tool schemas", () => {
         cwd: "/workspace",
       }),
     ).toBe(true);
+  });
+
+  it("exposes role descriptions and exact model identifiers", () => {
+    const schema = createSubagentStartSchema(catalog) as any;
+    expect(schema.properties.role.description).toContain("Omit role to use generic");
+    expect(schema.properties.role.description).toContain("scout: Search quickly");
+    expect(schema.properties.model.description).toContain("anthropic/claude-opus-4-8");
+    expect(schema.properties.model.description).toContain("Shorthand must match exactly one identifier");
   });
 
   it("uses bounded inspect views and cancellation scopes", () => {
@@ -80,7 +100,7 @@ describe("registered subagent tools", () => {
   it("registers four named tools with prompt snippets and compact structured results", async () => {
     const pi = fakePi();
     const toolController = controller();
-    registerSubagentTools(pi as never, toolController);
+    registerSubagentTools(pi as never, toolController, catalog);
 
     expect([...pi.tools.keys()]).toEqual([
       "subagent_start",
@@ -107,7 +127,7 @@ describe("registered subagent tools", () => {
     const pi = fakePi();
     const toolController = controller();
     vi.mocked(toolController.inspect).mockRejectedValue(new Error("not allowed"));
-    registerSubagentTools(pi as never, toolController);
+    registerSubagentTools(pi as never, toolController, catalog);
 
     await expect(
       pi.tools.get("subagent_inspect").execute(

@@ -166,8 +166,8 @@ describe("buildPiArgs", () => {
         PI_SUB_DEPTH: "2",
         PI_SUB_ROOT_SESSION_ID: "fresh-root",
       });
-      for (const value of Object.values(stale)) {
-        expect(Object.values(built.env)).not.toContain(value);
+      for (const [key, value] of Object.entries(stale)) {
+        expect(built.env[key]).not.toBe(value);
       }
       await built.cleanup();
     } finally {

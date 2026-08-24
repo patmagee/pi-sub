@@ -393,7 +393,6 @@ export function createSubagentExtension(
       return runtime;
     };
 
-    registerSubagentTools(pi, proxy);
     pi.registerMessageRenderer("subagent-update", (message, options, theme) => {
       const details = message.details as { childId?: string } | undefined;
       return new Text(
@@ -430,6 +429,7 @@ export function createSubagentExtension(
       runtime = environment.PI_SUB_ROOT_SOCKET
         ? await dependencies.createChildRuntime(factoryInput)
         : await dependencies.createRootRuntime(factoryInput);
+      registerSubagentTools(pi, proxy, runtime.catalog);
       if (ctx.hasUI) {
         for (const diagnostic of runtime.diagnostics) ctx.ui.notify(diagnostic, "warning");
       }

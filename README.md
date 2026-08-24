@@ -24,11 +24,17 @@ cd pi-sub
 pi -e .
 ```
 
-Then ask Pi to delegate work:
+Then ask Pi to delegate work. A role is optional:
 
 ```text
-Use a scout subagent to find where authentication tokens are refreshed.
+Start a subagent to find where authentication tokens are refreshed.
 Continue with my main task while it works.
+```
+
+Choose a specialized role or an unambiguous model shorthand when useful:
+
+```text
+Use a scout subagent with the opus model to map the authentication flow.
 ```
 
 The start call returns immediately. Pi receives promoted updates and a final summary as the subagent works.
@@ -59,6 +65,7 @@ Subagents may delegate to their own children. The root manager enforces the sess
 
 The bundled roles are:
 
+- `generic`
 - `scout`
 - `investigator`
 - `reviewer`
@@ -107,6 +114,10 @@ The isolation here is prompt isolation, not process isolation. These are two dif
 
 ## Models and effort
 
+`subagent_start` exposes the current role names and model identifiers in its tool schema. It uses Pi's session-scoped models when configured. Otherwise, it uses every model available through Pi's model registry.
+
+A model override can be an exact `provider/model-id` or case-insensitive shorthand. Shorthand is accepted only when it matches one exposed identifier. For example, `opus` can resolve to `anthropic/claude-opus-4-8` when no other exposed identifier contains `opus`. An ambiguous shorthand fails and reports all matches.
+
 Model selection uses this order:
 
 1. The `subagent_start` override.
@@ -115,7 +126,9 @@ Model selection uses this order:
 
 Thinking effort uses the same order. Supported effort values are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`.
 
-The requested model must be available in Pi. An unavailable model produces a retained failed record instead of silently selecting another model.
+Omitting `role` selects `generic`. An explicit role must match an exposed role name.
+
+Invalid or ambiguous role and model selections fail before admission and do not create dashboard records. The extension never silently selects another model.
 
 ## Dashboard
 

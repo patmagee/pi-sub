@@ -118,12 +118,14 @@ describe("extension lifecycle", () => {
     const configured = dependencies();
     configured.root.mockResolvedValue({
       controller: controller(),
+      catalog: dispatchCatalog,
       shutdown: vi.fn(async () => {}),
       diagnostics: ["bad role"],
     });
     createSubagentExtension(configured.dependencies)(pi as never);
     const ctx = context(false);
 
+    expect(pi.tools).toEqual([]);
     await pi.fire("session_start", { reason: "startup" }, ctx);
 
     expect(configured.root).toHaveBeenCalledWith(expect.objectContaining({ projectTrusted: false }));

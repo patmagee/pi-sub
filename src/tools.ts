@@ -2,26 +2,44 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
+import type { DispatchCatalog } from "./dispatch-catalog.js";
 import type { CancelResult, RecordUpdateInput } from "./manager.js";
 import type { InspectResult, StartInput, StartReceipt } from "./protocol.js";
 
 const MAX_TOOL_TEXT_BYTES = 50 * 1024;
 
-export const SubagentStartSchema = Type.Object(
-  {
-    name: Type.String({ minLength: 1, description: "Short display name for the agent" }),
-    role: Type.String({ minLength: 1, description: "Role name" }),
-    task: Type.String({ minLength: 1, description: "Bounded assignment" }),
-    permission: Type.Optional(StringEnum(["read-only", "inherit"] as const)),
-    contextSummary: Type.Optional(Type.String({ description: "Explicit parent-written context summary" })),
-    model: Type.Optional(Type.String({ minLength: 1, description: "Provider/model override" })),
-    effort: Type.Optional(
-      StringEnum(["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const),
-    ),
-    cwd: Type.Optional(Type.String({ minLength: 1, description: "Working directory" })),
-  },
-  { additionalProperties: false },
-);
+function roleDescription(catalog: DispatchCatalog): string {
+  const roles = catalog.roles.map((role) => `${role.name}: ${role.description}`).join("; ");
+  return `Optional role profile. Omit role to use generic. Available roles: ${roles}.`;
+}
+
+function modelDescription(catalog: DispatchCatalog): string {
+  const models = catalog.models.join(", ") || "none";
+  return `Provider/model override. Use an exact identifier or shorthand. Shorthand must match exactly one identifier. Available models: ${models}.`;
+}
+
+export function createSubagentStartSchema(catalog: DispatchCatalog) {
+  return Type.Object(
+    {
+      name: Type.String({ minLength: 1, description: "Short display name for the agent" }),
+      role: Type.Optional(
+        StringEnum(
+          catalog.roles.map((role) => role.name),
+          { description: roleDescription(catalog) },
+        ),
+      ),
+      task: Type.String({ minLength: 1, description: "Bounded assignment" }),
+      permission: Type.Optional(StringEnum(["read-only", "inherit"] as const)),
+      contextSummary: Type.Optional(Type.String({ description: "Explicit parent-written context summary" })),
+      model: Type.Optional(Type.String({ minLength: 1, description: modelDescription(catalog) })),
+      effort: Type.Optional(
+        StringEnum(["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const),
+      ),
+      cwd: Type.Optional(Type.String({ minLength: 1, description: "Working directory" })),
+    },
+    { additionalProperties: false },
+  );
+}
 
 export const SubagentUpdateSchema = Type.Object(
   {
@@ -49,7 +67,7 @@ export const SubagentCancelSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export type SubagentStartParameters = Static<typeof SubagentStartSchema>;
+export type SubagentStartParameters = StartInput;
 export type SubagentUpdateParameters = Static<typeof SubagentUpdateSchema>;
 export type SubagentInspectParameters = Static<typeof SubagentInspectSchema>;
 export type SubagentCancelParameters = Static<typeof SubagentCancelSchema>;
@@ -91,6 +109,7 @@ function inspectText(result: InspectResult): string {
 export function registerSubagentTools(
   pi: Pick<ExtensionAPI, "registerTool">,
   controller: SubagentToolController,
+  catalog: DispatchCatalog,
 ): void {
   pi.registerTool({
     name: "subagent_start",
@@ -100,7 +119,7 @@ export function registerSubagentTools(
     promptGuidelines: [
       "Use subagent_start for context-heavy exploration only when omitted child context is not needed to judge the result.",
     ],
-    parameters: SubagentStartSchema,
+    parameters: createSubagentStartSchema(catalog),
     async execute(_id, params, signal) {
       const receipt = await controller.start(params, signal);
       const modelText = "model" in params && params.model ? ` model=${params.model}` : "";
@@ -118,7 +137,7 @@ export function registerSubagentTools(
     },
     renderCall(args, theme) {
       return new Text(
-        `${theme.fg("toolTitle", theme.bold("subagent_start "))}${theme.fg("accent", args.name)} ${theme.fg("muted", args.role)}`,
+        `${theme.fg("toolTitle", theme.bold("subagent_start "))}${theme.fg("accent", args.name)} ${theme.fg("muted", args.role ?? "generic")}`,
         0,
         0,
       );
