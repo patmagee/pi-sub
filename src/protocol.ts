@@ -7,7 +7,7 @@ export type InspectView = "metadata" | "updates" | "summary" | "session";
 
 export interface StartInput {
   name: string;
-  role: string;
+  role?: string;
   task: string;
   permission?: PermissionMode;
   contextSummary?: string;
@@ -137,7 +137,7 @@ function requestFields(value: Record<string, unknown>): void {
 function validateStartInput(value: unknown): void {
   const input = object(value);
   stringField(input, "name");
-  stringField(input, "role");
+  optionalString(input, "role");
   stringField(input, "task");
   optionalString(input, "contextSummary");
   optionalString(input, "model");
