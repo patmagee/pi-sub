@@ -138,7 +138,7 @@ Invalid or ambiguous role and model selections fail before admission and do not 
 
 ## Dashboard
 
-The below-editor status strip shows every retained agent:
+The below-editor status strip appears only while at least one subagent is live. It shows every live agent:
 
 | Symbol | Status |
 | --- | --- |

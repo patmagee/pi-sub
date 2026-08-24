@@ -14,6 +14,25 @@ const dispatchCatalog: DispatchCatalog = {
   models: ["anthropic/parent"],
 };
 
+function liveRecord(id: string): any {
+  return {
+    id,
+    requestedName: id,
+    displayName: id,
+    role: "scout",
+    task: `Task for ${id}`,
+    depth: 1,
+    permission: "read-only",
+    cwd: "/workspace",
+    status: "running",
+    createdAt: 1,
+    startedAt: 2,
+    updates: [],
+    activity: [],
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: 0, turns: 0 },
+  };
+}
+
 function controller(): SubagentToolController {
   return {
     start: vi.fn(),
@@ -139,11 +158,13 @@ describe("extension lifecycle", () => {
     ]);
   });
 
-  it("installs root TUI composition and removes it during shutdown", async () => {
+  it("installs the editor immediately but defers the widget until a subagent is live", async () => {
     const pi = fakePi();
     const configured = dependencies();
     const session = runtime();
+    let push: (records: any[]) => void = () => {};
     session.subscribe = (listener) => {
+      push = listener;
       listener([]);
       return vi.fn();
     };
@@ -155,11 +176,52 @@ describe("extension lifecycle", () => {
 
     await pi.fire("session_start", { reason: "startup" }, ctx);
 
+    // No live subagents yet: editor is installed, widget stays hidden.
+    expect(ctx.ui.setEditorComponent).toHaveBeenCalledWith(expect.any(Function));
+    expect(ctx.ui.setWidget).not.toHaveBeenCalled();
+
+    // A live subagent appears: the widget mounts.
+    push([liveRecord("agent-1")]);
     expect(ctx.ui.setWidget).toHaveBeenCalledWith(
       "pi-subagents",
       expect.any(Function),
       { placement: "belowEditor" },
     );
+
+    // The last live subagent finishes: the widget unmounts.
+    push([]);
+    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("pi-subagents", undefined);
+  });
+
+  it("mounts the widget only once while subagents stay live and removes it during shutdown", async () => {
+    const pi = fakePi();
+    const configured = dependencies();
+    const session = runtime();
+    let push: (records: any[]) => void = () => {};
+    session.subscribe = (listener) => {
+      push = listener;
+      listener([liveRecord("agent-1")]);
+      return vi.fn();
+    };
+    configured.root.mockResolvedValue(session);
+    createSubagentExtension(configured.dependencies)(pi as never);
+    const ctx = context();
+    const previousEditor = vi.fn();
+    ctx.ui.getEditorComponent.mockReturnValue(previousEditor);
+
+    await pi.fire("session_start", { reason: "startup" }, ctx);
+
+    expect(ctx.ui.setWidget).toHaveBeenCalledTimes(1);
+    expect(ctx.ui.setWidget).toHaveBeenCalledWith(
+      "pi-subagents",
+      expect.any(Function),
+      { placement: "belowEditor" },
+    );
+
+    // A second live subagent must not re-mount the already-visible widget.
+    push([liveRecord("agent-1"), liveRecord("agent-2")]);
+    expect(ctx.ui.setWidget).toHaveBeenCalledTimes(1);
+
     expect(ctx.ui.setEditorComponent).toHaveBeenCalledWith(expect.any(Function));
     await pi.commands.get("subagents").handler("", ctx);
     expect(ctx.ui.custom).toHaveBeenCalled();

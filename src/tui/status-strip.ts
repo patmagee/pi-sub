@@ -48,6 +48,10 @@ export class SubagentStatusStrip implements Component {
     return this.records[this.selection]?.id;
   }
 
+  get hasLiveRecords(): boolean {
+    return this.records.length > 0;
+  }
+
   get isFocused(): boolean {
     return this.focused;
   }

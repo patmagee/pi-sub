@@ -442,9 +442,30 @@ export function createSubagentExtension(
           },
           invalidated: () => widgetTui?.requestRender(),
         });
+        const previousEditor = ctx.ui.getEditorComponent();
+        let widgetMounted = false;
+        const syncWidget = () => {
+          const shouldMount = strip.hasLiveRecords;
+          if (shouldMount === widgetMounted) return;
+          widgetMounted = shouldMount;
+          if (shouldMount) {
+            ctx.ui.setWidget(
+              "pi-subagents",
+              (tui) => {
+                widgetTui = tui;
+                return strip;
+              },
+              { placement: "belowEditor" },
+            );
+          } else {
+            ctx.ui.setWidget("pi-subagents", undefined);
+            widgetTui = undefined;
+          }
+        };
         const unsubscribe = runtime.subscribe((records) => {
           retained = records;
           strip.setRecords(records);
+          syncWidget();
         });
         openDashboard = async (initialId) => {
           const active = activeRuntime();
@@ -475,19 +496,13 @@ export function createSubagentExtension(
             ),
           );
         };
-        const previousEditor = ctx.ui.getEditorComponent();
-        ctx.ui.setWidget(
-          "pi-subagents",
-          (tui) => {
-            widgetTui = tui;
-            return strip;
-          },
-          { placement: "belowEditor" },
-        );
         ctx.ui.setEditorComponent(createStatusEditorFactory(previousEditor, strip));
         disposeTui = () => {
           unsubscribe();
-          ctx.ui.setWidget("pi-subagents", undefined);
+          if (widgetMounted) {
+            ctx.ui.setWidget("pi-subagents", undefined);
+            widgetMounted = false;
+          }
           ctx.ui.setEditorComponent(previousEditor);
           widgetTui = undefined;
           openDashboard = undefined;
