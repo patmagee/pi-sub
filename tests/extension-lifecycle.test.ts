@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { stripVTControlCharacters } from "node:util";
+import { initTheme } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import {
   createChildRuntime,
   createSubagentExtension,
@@ -130,6 +133,51 @@ function dependencies(environment: NodeJS.ProcessEnv = {}): {
     },
   };
 }
+
+describe("subagent message rendering", () => {
+  it.each(["subagent-update", "subagent-complete"])("renders Markdown in %s without changing the message", (type) => {
+    initTheme("dark");
+    const pi = fakePi();
+    createSubagentExtension(dependencies().dependencies)(pi as never);
+    const content = [
+      "## Findings",
+      "",
+      "**Verified** with `verify()`.",
+      "",
+      "```go",
+      "verify()",
+      "```",
+      "",
+      "| Check | Result |",
+      "| --- | --- |",
+      "| Integrity | Passed |",
+      "",
+      "- Unicode: 確認 ✅",
+    ].join("\n");
+    const message = { content, details: { childId: "reviewer-1", status: "complete" } };
+    const component = pi.renderers.get(type)(message, { outputPad: 2, expanded: false }, context().ui.theme);
+
+    for (const width of [80, 36]) {
+      component.invalidate();
+      const lines: string[] = component.render(width);
+      const rendered = stripVTControlCharacters(lines.join("\n"));
+      expect(rendered).toContain(type === "subagent-update" ? "subagent update reviewer-1" : "subagent complete reviewer-1");
+      expect(rendered).toContain("Verified");
+      expect(rendered).toContain("verify()");
+      expect(rendered).toContain("Integrity");
+      expect(rendered).toContain("Passed");
+      expect(rendered).toContain("確認");
+      expect(rendered).not.toContain("**Verified**");
+      expect(rendered).not.toContain("## Findings");
+      expect(rendered).not.toContain("`verify()`");
+      expect(rendered).toMatch(/^ {4}verify\(\)/m);
+      expect(rendered).not.toContain("| --- | --- |");
+      expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
+      expect(lines[0]).toMatch(/^ {2}subagent/);
+    }
+    expect(message.content).toBe(content);
+  });
+});
 
 describe("extension lifecycle", () => {
   it("creates only a root runtime and forwards project trust and visible diagnostics", async () => {

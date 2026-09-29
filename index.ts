@@ -5,7 +5,8 @@ import type {
   ExtensionContext,
   ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { Container, Markdown, Text } from "@earendil-works/pi-tui";
 import { parseConfig } from "./src/config.js";
 import {
   buildDispatchCatalog,
@@ -395,19 +396,25 @@ export function createSubagentExtension(
 
     pi.registerMessageRenderer("subagent-update", (message, options, theme) => {
       const details = message.details as { childId?: string } | undefined;
-      return new Text(
-        `${theme.fg("warning", "subagent update")} ${theme.fg("muted", String(details?.childId ?? "unknown"))}\n${String(message.content)}`,
+      const container = new Container();
+      container.addChild(new Text(
+        `${theme.fg("warning", "subagent update")} ${theme.fg("muted", String(details?.childId ?? "unknown"))}`,
         options.outputPad,
         0,
-      );
+      ));
+      container.addChild(new Markdown(String(message.content), options.outputPad, 0, getMarkdownTheme()));
+      return container;
     });
     pi.registerMessageRenderer("subagent-complete", (message, options, theme) => {
       const details = message.details as { childId?: string; status?: string } | undefined;
-      return new Text(
-        `${theme.fg("success", `subagent ${String(details?.status ?? "complete")}`)} ${theme.fg("muted", String(details?.childId ?? "unknown"))}\n${String(message.content)}`,
+      const container = new Container();
+      container.addChild(new Text(
+        `${theme.fg("success", `subagent ${String(details?.status ?? "complete")}`)} ${theme.fg("muted", String(details?.childId ?? "unknown"))}`,
         options.outputPad,
         0,
-      );
+      ));
+      container.addChild(new Markdown(String(message.content), options.outputPad, 0, getMarkdownTheme()));
+      return container;
     });
     pi.registerCommand("subagents", {
       description: "Show subagent status and management controls",
