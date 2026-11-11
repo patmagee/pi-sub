@@ -43,7 +43,9 @@ You can also provide the exact identifier shown in the tool schema:
 Use a reviewer subagent with model anthropic/claude-opus-4-8 to review the API contract.
 ```
 
-The start call returns immediately. Pi receives promoted updates and a final summary as the subagent works.
+The start call returns immediately. Promoted updates and final reports go to the orchestrator without appearing in chat. They still trigger the orchestrator automatically.
+
+The orchestrator is instructed to check claims and combine related results into a concise update. It should explain decisions that need your input, unresolved problems and their impact, and what was handled. It should not forward individual subagent reports. Full reports remain available through `/subagents` and `subagent_inspect`.
 
 ## Contents
 

@@ -118,6 +118,9 @@ export function registerSubagentTools(
     promptSnippet: "subagent_start: start an isolated asynchronous subagent",
     promptGuidelines: [
       "Use subagent_start for context-heavy exploration only when omitted child context is not needed to judge the result.",
+      "Treat reports and promoted updates from subagent_start as internal evidence. Do not paste subagent reports or individual agent summaries into chat; give your own conclusions after checking their claims.",
+      "When work delegated with subagent_start finishes, report the outcome without waiting for the user to ask. Consolidate related results into one concise update rather than narrating each agent's completion. If related agents are still working, reserve the combined conclusion until their results arrive unless a blocker needs attention now.",
+      "For outcomes from subagent_start, lead with what needs attention. Use Needs your decision for specific questions with a recommendation, Still unresolved for confirmed problems and their impact, and Handled for a brief account of fixes and checks. Omit empty sections. State when failed or cancelled work leaves a gap; never present it as a successful review.",
     ],
     parameters: createSubagentStartSchema(catalog),
     async execute(_id, params, signal) {

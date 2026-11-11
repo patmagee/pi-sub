@@ -393,11 +393,16 @@ describe("child parent delivery", () => {
 
     expect(pi.messages).toEqual([
       expect.objectContaining({
-        message: expect.objectContaining({ customType: "subagent-update", content: "progress" }),
+        message: expect.objectContaining({ customType: "subagent-update", content: "progress", display: false }),
         options: { deliverAs: "steer", triggerTurn: true },
       }),
       expect.objectContaining({
-        message: expect.objectContaining({ customType: "subagent-complete", content: "done" }),
+        message: expect.objectContaining({
+          customType: "subagent-complete",
+          content: "done",
+          display: false,
+          details: { childId: "child-2", status: "complete", sessionFile: "/sessions/child.jsonl" },
+        }),
         options: { deliverAs: "followUp", triggerTurn: true },
       }),
     ]);
@@ -410,6 +415,30 @@ describe("child parent delivery", () => {
 });
 
 describe("parent delivery", () => {
+  it.each(["update", "complete", "failed", "cancelled"] as const)(
+    "delivers %s internally and triggers the parent without displaying the report",
+    (kind) => {
+      const pi = fakePi();
+      const text = "## Findings\n\n**Raw child report** with evidence.";
+      sendParentDelivery(pi as never, {
+        childId: "reviewer-1",
+        kind,
+        text,
+        sessionFile: "/sessions/reviewer.jsonl",
+      });
+
+      expect(pi.messages).toEqual([{
+        message: {
+          customType: kind === "update" ? "subagent-update" : "subagent-complete",
+          content: text,
+          display: false,
+          details: { childId: "reviewer-1", status: kind, sessionFile: "/sessions/reviewer.jsonl" },
+        },
+        options: { deliverAs: kind === "update" ? "steer" : "followUp", triggerTurn: true },
+      }]);
+    },
+  );
+
   it("uses steering for updates and follow-up delivery for completion", () => {
     const pi = fakePi();
     sendParentDelivery(pi as never, {

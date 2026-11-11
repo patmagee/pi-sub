@@ -79,7 +79,7 @@ export function sendParentDelivery(pi: Pick<ExtensionAPI, "sendMessage">, delive
     {
       customType: update ? "subagent-update" : "subagent-complete",
       content: delivery.text,
-      display: true,
+      display: false,
       details: {
         childId: delivery.childId,
         status: delivery.kind,

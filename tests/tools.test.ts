@@ -102,6 +102,24 @@ describe("subagent tool schemas", () => {
 });
 
 describe("registered subagent tools", () => {
+  it("guides the orchestrator to report actionable conclusions without forwarding child reports", () => {
+    const pi = fakePi();
+    registerSubagentTools(pi as never, controller(), catalog);
+    const guidelines = pi.tools.get("subagent_start").promptGuidelines.join("\n");
+
+    expect(guidelines).toContain("internal evidence");
+    expect(guidelines).toContain("Do not paste subagent reports");
+    expect(guidelines).toContain("without waiting for the user to ask");
+    expect(guidelines).toContain("Consolidate related results");
+    expect(guidelines).toContain("Needs your decision");
+    expect(guidelines).toContain("recommendation");
+    expect(guidelines).toContain("Still unresolved");
+    expect(guidelines).toContain("impact");
+    expect(guidelines).toContain("Handled");
+    expect(guidelines).toContain("Omit empty sections");
+    expect(guidelines).toContain("failed or cancelled");
+  });
+
   it("registers four named tools with prompt snippets and compact structured results", async () => {
     const pi = fakePi();
     const toolController = controller();
