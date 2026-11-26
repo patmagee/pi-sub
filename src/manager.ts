@@ -124,6 +124,7 @@ export class SubagentManager {
   private shuttingDown = false;
   private shutdownPromise?: Promise<void>;
   private scheduling = false;
+  private notifyTimer: NodeJS.Timeout | undefined;
 
   constructor(private readonly options: ManagerOptions) {
     this.registry = new AgentRegistry(options.config);
@@ -296,6 +297,8 @@ export class SubagentManager {
   shutdown(reason: string): Promise<void> {
     if (this.shutdownPromise) return this.shutdownPromise;
     this.shuttingDown = true;
+    if (this.notifyTimer) clearTimeout(this.notifyTimer);
+    this.notifyTimer = undefined;
     this.shutdownPromise = (async () => {
       const targets = this.registry
         .list()
@@ -373,7 +376,7 @@ export class SubagentManager {
           };
           if (snapshot.finalSummary !== undefined) patch.finalSummary = snapshot.finalSummary;
           this.registry.patch(id, patch);
-          this.notify();
+          this.notify(true);
         },
         onComplete: (result) => {
           void this.completeRecord(id, result);
@@ -519,8 +522,25 @@ export class SubagentManager {
     if (!this.shuttingDown) void this.scheduleNext();
   }
 
-  private notify(): void {
+  private notify(defer = false): void {
+    // Streaming agents share one full-registry refresh, independent of agent count.
+    if (defer) {
+      if (!this.shuttingDown && this.subscribers.size > 0 && !this.notifyTimer) {
+        this.notifyTimer = setTimeout(() => this.notify(), 100);
+        this.notifyTimer.unref();
+      }
+      return;
+    }
+    if (this.notifyTimer) clearTimeout(this.notifyTimer);
+    this.notifyTimer = undefined;
+    if (this.subscribers.size === 0) return;
     const records = this.registry.list();
-    for (const subscriber of this.subscribers) subscriber(records);
+    for (const subscriber of this.subscribers) {
+      try {
+        subscriber(records);
+      } catch {
+        // A UI observer must not interrupt process ownership or other observers.
+      }
+    }
   }
 }

@@ -58,6 +58,10 @@ class FakeRunner {
     return handle;
   }
 
+  update(id: string, snapshot: PiEventReducerSnapshot): void {
+    this.processes.get(id)!.callbacks.onUpdate?.(snapshot);
+  }
+
   finish(id: string, status: ProcessResult["status"] = "completed"): ProcessResult {
     const entry = this.processes.get(id)!;
     const snapshot: PiEventReducerSnapshot = {
@@ -347,6 +351,61 @@ describe("SubagentManager session files", () => {
     const session = await instance.inspect({ targetId: agent.id, view: "session", limit: 4 });
     expect(session.content).toBe("sess");
     expect(session.truncated).toBe(true);
+  });
+});
+
+describe("SubagentManager streaming notifications", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("isolates failing observers during a scheduled refresh", async () => {
+    vi.useFakeTimers();
+    const { instance, runner } = manager();
+    const agent = await instance.start({ name: "agent", task: "work" }, rootContext);
+    let fail = false;
+    instance.subscribe(() => {
+      if (fail) throw new Error("observer failed");
+    });
+    const listener = vi.fn();
+    instance.subscribe(listener);
+    listener.mockClear();
+    fail = true;
+    runner.update(agent.id, emptySnapshot);
+    await expect(vi.advanceTimersByTimeAsync(100)).resolves.toBeDefined();
+    expect(listener).toHaveBeenCalledTimes(1);
+    await instance.shutdown("test");
+  });
+
+  it("batches updates across agents without delaying inspection or terminal status", async () => {
+    vi.useFakeTimers();
+    const { instance, runner } = manager();
+    const agents = [];
+    for (let i = 0; i < 12; i++) {
+      agents.push(await instance.start({ name: `agent-${i}`, task: "work" }, rootContext));
+    }
+    const listener = vi.fn();
+    const unsubscribe = instance.subscribe(listener);
+    listener.mockClear();
+    for (const agent of agents) {
+      runner.update(agent.id, { ...emptySnapshot, finalSummary: `latest:${agent.id}` });
+    }
+    expect(listener.mock.calls.length).toBe(0);
+    expect((await instance.inspect({ targetId: agents[0]!.id, view: "summary" })).content)
+      .toMatchObject({ finalSummary: `latest:${agents[0]!.id}` });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener.mock.calls[0]![0]).toHaveLength(12);
+    runner.update(agents[0]!.id, emptySnapshot);
+    runner.finish(agents[0]!.id);
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener.mock.calls[1]![0][0].status).toBe("completed");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(listener).toHaveBeenCalledTimes(2);
+    runner.update(agents[1]!.id, emptySnapshot);
+    unsubscribe();
+    await instance.shutdown("test");
+    await vi.runAllTimersAsync();
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 

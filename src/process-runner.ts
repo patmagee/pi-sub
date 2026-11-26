@@ -3,6 +3,7 @@ import type { Readable } from "node:stream";
 import { PiEventReducer, type PiEventReducerSnapshot } from "./event-reducer.js";
 
 const MAX_STDERR_BYTES = 64 * 1024;
+const UPDATE_INTERVAL_MS = 100;
 
 export interface ProcessRunnerInput {
   command: string;
@@ -58,6 +59,7 @@ class OwnedProcessHandle implements ProcessHandle {
   private forced = false;
   private settled = false;
   private killTimer?: NodeJS.Timeout;
+  private updateTimer: NodeJS.Timeout | undefined;
   private abortListener?: () => void;
   private resolveCompletion!: (result: ProcessResult) => void;
 
@@ -120,6 +122,17 @@ class OwnedProcessHandle implements ProcessHandle {
   private reduceLine(line: string): void {
     if (!line) return;
     this.reducer.pushLine(line);
+    // Reduce every event, but do not copy the activity history for every token.
+    if (!this.updateTimer && this.callbacks.onUpdate) {
+      this.updateTimer = setTimeout(() => this.flushUpdate(), UPDATE_INTERVAL_MS);
+      this.updateTimer.unref();
+    }
+  }
+
+  private flushUpdate(): void {
+    if (!this.updateTimer) return;
+    clearTimeout(this.updateTimer);
+    this.updateTimer = undefined;
     safeCallback(() => this.callbacks.onUpdate?.(this.reducer.snapshot()));
   }
 
@@ -160,6 +173,7 @@ class OwnedProcessHandle implements ProcessHandle {
       this.input.signal.removeEventListener("abort", this.abortListener);
     }
     if (this.stdoutBuffer.trim()) this.reduceLine(this.stdoutBuffer);
+    this.flushUpdate();
 
     try {
       await this.input.cleanup();
