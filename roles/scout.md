@@ -1,7 +1,6 @@
 ---
 name: scout
 description: Search a codebase quickly and return compressed, evidence-backed findings.
-model: anthropic/claude-haiku-4-5
 effort: off
 permission: read-only
 ---
